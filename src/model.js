@@ -1,6 +1,6 @@
 export const AVATARS = Object.freeze([
-  { id: 'sol', label: '솔 아바타', color: '#F5DBCF' },
-  { id: 'haon', label: '하온 아바타', color: '#EDE2BD' },
+  { id: 'sol', label: '윤서 아바타', color: '#E2D3F3' },
+  { id: 'haon', label: '하온 아바타', color: '#D4E9DF' },
   { id: 'ian', label: '이안 아바타', color: '#DDE7D6' },
   { id: 'roa', label: '로아 아바타', color: '#EAE0F3' },
 ]);
@@ -15,7 +15,7 @@ export const CONTEXT_MESSAGES = 10;
 export const CONTEXT_CHARS = 1_800;
 
 export const DEFAULT_CHARACTERS = Object.freeze([
-  { id: 'first', name: '솔', avatar: 'sol', relation: '동갑', address: '', tone: '다정하게', photo: '' },
+  { id: 'first', name: '윤서', avatar: 'sol', relation: '동갑', address: '', tone: '다정하게', photo: '' },
   { id: 'second', name: '하온', avatar: 'haon', relation: '연하', address: '', tone: '차분하게', photo: '' },
 ]);
 
@@ -27,7 +27,7 @@ export const TONE_PROFILES = {
 };
 
 export function emptyState() {
-  return { version: 1, characters: [], entries: [], threads: {} };
+  return { version: 1, characters: [], entries: [], threads: {}, readThrough: {} };
 }
 
 export function cleanCharacter(value, id) {
@@ -51,12 +51,17 @@ export function readState(value) {
     throw new Error('저장된 데이터를 읽지 못했어요.');
   }
   const characters = DEFAULT_CHARACTERS.map((preset, index) => cleanCharacter(raw.characters[index], preset.id));
+  const threads = Object.fromEntries(DEFAULT_CHARACTERS.flatMap(({ id }) => {
+    const messages = raw.threads?.[id];
+    return Array.isArray(messages) ? [[id, messages.filter(validMessage)]] : [];
+  }));
+  const readThrough = Object.fromEntries(Object.entries(threads).map(([id, messages]) => {
+    const seen = raw.readThrough?.[id];
+    return [id, seen === '' || messages.some(message => message.id === seen) ? seen : messages.at(-1)?.id ?? ''];
+  }));
   return {
     version: 1, characters: characters.every(Boolean) ? characters : [],
-    threads: Object.fromEntries(DEFAULT_CHARACTERS.flatMap(({ id }) => {
-      const messages = raw.threads?.[id];
-      return Array.isArray(messages) ? [[id, messages.filter(validMessage)]] : [];
-    })),
+    threads, readThrough,
     entries: raw.entries.filter(entry => typeof entry?.id === 'string' && typeof entry.text === 'string'
       && typeof entry.date === 'string' && Number.isFinite(Date.parse(entry.createdAt))
       && ['prepared', 'generated', 'fallback', 'safety', 'support'].includes(entry.status)
@@ -79,6 +84,43 @@ export function newMessage(role, value, source, now = new Date()) {
     role, text, createdAt: now.toISOString(), ...(source ? { source } : {}) };
   if (!validMessage(message)) throw new Error('보낼 이야기는 1~500자로 적어 주세요.');
   return message;
+}
+
+export function welcomeMessage(person, now = new Date()) {
+  const formal = person.relation === '연하';
+  const address = person.address ? `${person.address}, ` : '';
+  const greeting = {
+    '다정하게': formal ? '오늘 하루는 어땠어요? 작은 일도 들려주세요.' : '오늘 하루는 어땠어? 작은 일도 들려줘.',
+    '친근하게': formal ? '오늘은 무슨 일이 있었어요? 편하게 얘기해요.' : '오늘은 무슨 일이 있었어? 편하게 얘기해.',
+    '차분하게': formal ? '오늘 마음에 남은 일이 있으면 천천히 들려주세요.' : '오늘 마음에 남은 일이 있으면 천천히 들려줘.',
+    '장난스럽게': formal ? '오늘의 소소한 뉴스가 있나요? 귀 기울여 듣고 있어요.' : '오늘의 소소한 뉴스 있어? 귀 쫑긋하고 듣고 있어.',
+  };
+  return newMessage('assistant', address + greeting[person.tone], 'welcome', now);
+}
+
+export function unreadCount(thread, readThrough) {
+  const lastRead = thread.findIndex(message => message.id === readThrough);
+  return thread.slice(lastRead + 1).filter(message => message.role === 'assistant').length;
+}
+
+export function archiveRecords({ characters, entries, threads }) {
+  const records = [...entries];
+  for (const person of characters) {
+    let current = null;
+    for (const message of threads[person.id] ?? []) {
+      if (message.role === 'user') {
+        current = {
+          id: message.id, date: localDate(new Date(message.createdAt)), createdAt: message.createdAt,
+          text: message.text, roomId: person.id, name: person.name, replies: [],
+        };
+        records.push(current);
+      } else if (current && message.source !== 'welcome') {
+        const { name, avatar, photo } = person;
+        current.replies.push({ id: message.id, name, avatar, photo, message: message.text, source: message.source });
+      }
+    }
+  }
+  return records.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 export function conversationContext(thread) {

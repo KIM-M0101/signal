@@ -46,7 +46,7 @@ test('saved replies keep their author and day when characters are edited', async
   const characters = DEFAULT_CHARACTERS.map(character => ({ ...character, name: '가상 캐릭터' }));
   const restored = readState(JSON.stringify({ ...emptyState(), characters, entries: [entry] }));
   assert.equal(restored.entries[0].date, '2026-11-10');
-  assert.equal(restored.entries[0].replies[0].name, '솔');
+  assert.equal(restored.entries[0].replies[0].name, DEFAULT_CHARACTERS[0].name);
   assert.equal(restored.characters[0].name, '가상 캐릭터');
   assert.equal(cleanCharacter({ ...characters[0], photo: 'https://example.test/photo.png' }, 'first').photo, '');
 });

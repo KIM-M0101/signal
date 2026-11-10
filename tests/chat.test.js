@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createSignalServer } from '../server/chat.js';
-import { CONTEXT_CHARS, DEFAULT_CHARACTERS, conversationContext, emptyState, newMessage, readState } from '../src/model.js';
+import {
+  CONTEXT_CHARS, DEFAULT_CHARACTERS, archiveRecords, conversationContext, emptyState, newMessage,
+  readState, unreadCount, welcomeMessage,
+} from '../src/model.js';
 
 async function runServer(t, modelFetch) {
   const server = createSignalServer({ modelFetch });
@@ -32,7 +35,8 @@ test('sends the selected profile and conversation order to the local model', asy
   assert.deepEqual(await response.json(), { reply: '발표 자료를 정리하고 제목까지 정했군요.', source: 'ai' });
   assert.equal(request.url, 'http://127.0.0.1:8083/v1/chat/completions');
   assert.deepEqual(request.messages.slice(1), messages);
-  assert.match(request.messages[0].content, /짧고 차분하게 답해요.*\n반드시 한국어 해요체 존댓말/);
+  assert.match(request.messages[0].content, /짧고 차분하게 답해요/);
+  assert.match(request.messages[0].content, /polite Korean 해요체/);
   assert.doesNotMatch(JSON.stringify(request), /private-image/);
 });
 
@@ -68,4 +72,38 @@ test('the saved rooms keep independent context across reloads and dates', () => 
   const long = Array.from({ length: 12 }, () => newMessage('user', '가'.repeat(500)));
   assert.ok(conversationContext(long).reduce((sum, item) => sum + item.content.length, 0) <= CONTEXT_CHARS);
   assert.deepEqual(readState('{"version":1,"characters":[],"entries":[]}').threads, {});
+});
+
+test('unopened greetings keep their unread count and stay out of the AI context', () => {
+  const first = { ...DEFAULT_CHARACTERS[0], address: '지우야' };
+  const second = DEFAULT_CHARACTERS[1];
+  const threads = { first: [welcomeMessage(first)], second: [welcomeMessage(second)] };
+  const state = { ...emptyState(), characters: [first, second], threads, readThrough: { first: '', second: threads.second[0].id } };
+  const saved = readState(JSON.stringify(state));
+  assert.match(threads.first[0].text, /^지우야,/u);
+  assert.match(threads.second[0].text, /주세요/u);
+  assert.equal(unreadCount(saved.threads.first, saved.readThrough.first), 1);
+  assert.equal(unreadCount(saved.threads.second, saved.readThrough.second), 0);
+  const message = newMessage('user', '오늘 문제 두 개 풀었어.');
+  assert.deepEqual(conversationContext([...threads.first, message]), [user(message.text)]);
+  const { readThrough, ...legacy } = state;
+  const migrated = readState(JSON.stringify(legacy));
+  assert.equal(unreadCount(migrated.threads.first, migrated.readThrough.first), 0);
+});
+
+test('the archive pairs replies with their story and preserves earlier records', () => {
+  const previous = { id: 'legacy-record', date: '2026-11-08', createdAt: '2026-11-08T13:00:00.000Z', text: '이전 기록' };
+  const story = newMessage('user', '자료를 준비했어.', undefined, new Date('2026-11-09T23:59:00'));
+  const reply = newMessage('assistant', '자료를 준비했구나.', 'ai', new Date('2026-11-10T00:00:00'));
+  const latest = newMessage('user', '산책했어요.', undefined, new Date('2026-11-10T12:00:00'));
+  const state = {
+    ...emptyState(), entries: [previous], characters: DEFAULT_CHARACTERS,
+    threads: { first: [welcomeMessage(DEFAULT_CHARACTERS[0]), story, reply], second: [latest] },
+  };
+  const records = archiveRecords(state);
+  assert.deepEqual(records.map(record => record.id), [latest.id, story.id, previous.id]);
+  assert.equal(records[1].date, '2026-11-09');
+  assert.equal(records[1].replies[0].message, reply.text);
+  assert.deepEqual(records[0].replies, []);
+  assert.equal(records[0].roomId, 'second');
 });

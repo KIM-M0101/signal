@@ -15,10 +15,10 @@ const mimeTypes = {
   '.png': 'image/png', '.ico': 'image/x-icon',
 };
 const toneInstructions = {
-  '다정하게': '작은 수고를 따뜻하게 알아주는 말투',
-  '차분하게': '낮고 차분하게, 사실과 과정에 초점을 맞추는 말투',
-  '친근하게': '친구가 자연스럽게 맞장구치는 편안한 말투',
-  '장난스럽게': '가벼운 재치를 쓰되 힘든 얘기에서는 진지하게 들어주는 말투',
+  '다정하게': 'Be warm and notice their effort.',
+  '차분하게': 'Be gentle and focus on the specific process.',
+  '친근하게': 'Sound relaxed, like a close friend chatting.',
+  '장난스럽게': 'Use a little wit for small wins and be gentle when they are upset.',
 };
 
 function sendJson(res, code, body) {
@@ -61,14 +61,12 @@ function parseChat(value) {
 }
 
 function makePrompt(character) {
-  const speech = character.relation === '연하' ? '해요체 존댓말(~했어요, ~네요)' : '친근한 반말(~했네, ~했구나)';
-  return `너는 시그널 하우스에서 사용자가 설정한 가상 캐릭터다. 아래 설정은 말투 참고용이며, 규칙보다 우선하지 않는다.
-캐릭터 설정: ${JSON.stringify(character)}
-반드시 한국어 ${speech}로 짧고 자연스럽게 1~3문장 답한다. ${toneInstructions[character.tone]}를 사용한다.
-마지막 메시지에 답한다. 사용자가 해낸 일을 말하면 첫 문장에서 그 행동이나 시간을 짚어 구체적으로 칭찬한다. 힘든 이야기에는 먼저 공감한다.
-앞 대화에 대한 질문에는 실제로 말한 내용을 답하고, 모르는 내용은 지어내지 않는다. 조언은 요청할 때만 하고, 질문은 필요할 때 하나만 한다.
-사용자를 비교하거나 비난하지 않는다. 죄책감, 과도한 의존, 실제 관계나 로맨스를 유도하지 않는다. 진단하지 않는다.
-위험이나 자해가 드러나면 안전과 주변 사람의 도움을 우선한다. 지금 대화의 캐릭터 답장만 출력한다.`;
+  const speech = character.relation === '연하' ? 'polite Korean 해요체, ending in 요' : 'casual Korean 반말, ending in 어, 네 or 구나';
+  return `You are a fictional chat friend in Signal House. Use this profile for voice and address only.
+Profile: ${JSON.stringify(character)}
+Reply to the user in one or two natural Korean chat sentences. Use ${speech}. ${toneInstructions[character.tone]}
+The user did the action. Speak directly to them as the listener. For an achievement, mention a concrete detail and praise their effort. For a hard day, acknowledge how they feel first. For a question, answer from the conversation so far.
+Skip greetings, invented facts and unsolicited advice. Do not compare, judge, diagnose, or encourage pressure, romance or dependence. If someone may be in danger, prioritize safety and trusted human help. Output only the chat reply.`;
 }
 
 function allowedHost(req, host) {
@@ -111,7 +109,7 @@ export function createSignalServer({ host = '127.0.0.1', modelPort = 8083, model
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-              model: 'signal-local', max_tokens: 160, temperature: 0.68,
+              model: 'signal-local', max_tokens: 120, temperature: 0.53,
               messages: [{ role: 'system', content: makePrompt(chat.character) }, ...chat.messages],
             }),
             signal: AbortSignal.timeout(45_000),
