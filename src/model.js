@@ -27,7 +27,7 @@ export const TONE_PROFILES = {
 };
 
 export function emptyState() {
-  return { version: 1, characters: [], entries: [], threads: {}, readThrough: {} };
+  return { version: 1, characters: [], entries: [], threads: {}, readThrough: {}, signals: [] };
 }
 
 export function cleanCharacter(value, id) {
@@ -50,7 +50,8 @@ export function readState(value) {
   if (raw?.version !== 1 || !Array.isArray(raw.characters) || !Array.isArray(raw.entries)) {
     throw new Error('저장된 데이터를 읽지 못했어요.');
   }
-  const characters = DEFAULT_CHARACTERS.map((preset, index) => cleanCharacter(raw.characters[index], preset.id));
+  const profiles = DEFAULT_CHARACTERS.map((preset, index) => cleanCharacter(raw.characters[index], preset.id));
+  const characters = profiles.every(Boolean) ? profiles : [];
   const threads = Object.fromEntries(DEFAULT_CHARACTERS.flatMap(({ id }) => {
     const messages = raw.threads?.[id];
     return Array.isArray(messages) ? [[id, messages.filter(validMessage)]] : [];
@@ -60,8 +61,8 @@ export function readState(value) {
     return [id, seen === '' || messages.some(message => message.id === seen) ? seen : messages.at(-1)?.id ?? ''];
   }));
   return {
-    version: 1, characters: characters.every(Boolean) ? characters : [],
-    threads, readThrough,
+    version: 1, characters, threads, readThrough,
+    signals: readTestSignals(raw.signals, { characters, threads }),
     entries: raw.entries.filter(entry => typeof entry?.id === 'string' && typeof entry.text === 'string'
       && typeof entry.date === 'string' && Number.isFinite(Date.parse(entry.createdAt))
       && ['prepared', 'generated', 'fallback', 'safety', 'support'].includes(entry.status)
@@ -121,6 +122,88 @@ export function archiveRecords({ characters, entries, threads }) {
     }
   }
   return records.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+export function testSignalCandidates(records, date) {
+  const candidates = new Map();
+  for (const record of records) {
+    if (record.date !== date || !record.roomId || category(record.text) === 'safety'
+      || record.replies.some(item => item.source === 'safety')) continue;
+    const reply = record.replies.find(item => item.source === 'ai');
+    if (!reply) continue;
+    if (!candidates.has(record.roomId)) candidates.set(record.roomId, []);
+    candidates.get(record.roomId).push([
+      { role: 'user', text: record.text }, { role: 'assistant', text: reply.message },
+    ]);
+  }
+  return candidates;
+}
+
+export function prepareTestSignal(state, date = localDate(), random = Math.random) {
+  if (state.signals.some(signal => signal.date === date && signal.message)) return null;
+  const candidates = testSignalCandidates(archiveRecords(state), date);
+  const candidateIds = [...candidates.keys()];
+  if (!candidateIds.length) return null;
+  const senderId = candidateIds[Math.floor(random() * candidateIds.length)];
+  return {
+    signal: { date, senderId, candidateIds, opened: false, guessId: null },
+    sender: state.characters.find(person => person.id === senderId),
+    messages: conversationContext(candidates.get(senderId).reverse().flat()),
+  };
+}
+
+export function receiveTestSignal(state, signal, message) {
+  if (state.signals.some(item => item.date === signal.date && item.message)) return state;
+  return { ...state, signals: [{ ...signal, message }, ...state.signals.filter(item => item.date !== signal.date)] };
+}
+
+export function revealTestSignal(state, date, guessId = null) {
+  const signal = state.signals.find(item => item.date === date);
+  if (!signal || signal.opened) return state;
+  if (signal.candidateIds.length > 1 ? !signal.candidateIds.includes(guessId) : guessId !== null) return state;
+  return {
+    ...state,
+    signals: state.signals.map(item => item === signal ? { ...item, opened: true, guessId } : item),
+  };
+}
+
+export function testSignalLetter({ characters, threads }, signal) {
+  const sender = characters.find(person => person.id === signal.senderId);
+  if (!sender) return null;
+  if (typeof signal.message === 'string' && signal.message.trim() && signal.message.length <= MAX_REPLY) {
+    return { sender, message: signal.message };
+  }
+  // Older test letters refer to the original chat instead of storing a message.
+  const thread = threads[signal.senderId] ?? [];
+  const index = thread.findIndex(message => message.id === signal.replyId);
+  const storyIndex = thread.findIndex(message => message.id === signal.storyId);
+  const reply = thread[index];
+  const story = thread[storyIndex];
+  if (reply?.role !== 'assistant' || reply.source !== 'ai'
+    || story?.role !== 'user' || index <= storyIndex
+    || thread.slice(storyIndex + 1, index).some(message => message.role === 'user')) return null;
+  return { sender, story: story.text, message: reply.text };
+}
+
+function readTestSignals(value, state) {
+  if (!Array.isArray(value)) return [];
+  const characterIds = new Set(state.characters.map(person => person.id));
+  const seen = new Set();
+  return value.flatMap(signal => {
+    if (typeof signal?.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(signal.date)
+      || !Number.isFinite(Date.parse(signal.date)) || seen.has(signal.date)
+      || !Array.isArray(signal.candidateIds) || !signal.candidateIds.includes(signal.senderId)
+      || new Set(signal.candidateIds).size !== signal.candidateIds.length
+      || !signal.candidateIds.every(id => characterIds.has(id))) return [];
+    const letter = testSignalLetter(state, signal);
+    if (!letter) return [];
+    const { date, senderId, candidateIds, storyId, replyId } = signal;
+    const body = letter.story ? { storyId, replyId } : { message: letter.message };
+    const opened = signal.opened === true;
+    const guessId = opened && candidateIds.includes(signal.guessId) ? signal.guessId : null;
+    seen.add(date);
+    return [{ date, senderId, candidateIds, ...body, opened, guessId }];
+  }).sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export function conversationContext(thread) {

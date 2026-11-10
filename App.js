@@ -6,14 +6,15 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { chatStatus, getReply } from './src/chat-api.js';
+import { chatStatus, getReply, getSignal } from './src/chat-api.js';
 import {
   DEFAULT_CHARACTERS, MAX_PHOTO, STORAGE_KEY, archiveRecords, cleanCharacter, emptyState,
-  newMessage, readState, safetyReply, unreadCount, welcomeMessage,
+  localDate, newMessage, prepareTestSignal, readState, receiveTestSignal, revealTestSignal, safetyReply, testSignalCandidates,
+  testSignalLetter, unreadCount, welcomeMessage,
 } from './src/model.js';
 import {
-  Action, Archive, Chat, Confirm, Conversations, EmptyChat, Intro, Notice,
-  Record, Settings, Setup, SignalPreview, Tabs,
+  Action, Archive, BazeConsent, Chat, Confirm, Conversations, EmptyChat, Intro, Notice,
+  Record, Settings, Setup, SignalLetter, Tabs,
 } from './src/screens.js';
 import { colors, styles as s } from './src/theme.js';
 
@@ -24,11 +25,16 @@ function SignalHouse() {
   const [route, setRoute] = useState('intro');
   const [setup, setSetup] = useState(null);
   const [detailId, setDetailId] = useState(null);
+  const [archiveTab, setArchiveTab] = useState('records');
+  const [signalDate, setSignalDate] = useState(null);
   const [roomId, setRoomId] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [chatErrors, setChatErrors] = useState({});
   const [pending, setPending] = useState({});
-  const [available, setAvailable] = useState(null);
+  const [connection, setConnection] = useState({ available: null, provider: null });
+  const [bazeConsent, setBazeConsent] = useState(false);
+  const [bazeNotice, setBazeNotice] = useState(false);
+  const [bazeUsage, setBazeUsage] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(null);
@@ -38,6 +44,7 @@ function SignalHouse() {
   const writeQueue = useRef(Promise.resolve());
   const scroll = useRef(null);
   const setupOrigin = useRef('house');
+  const signalOrigin = useRef('archive');
 
   function updateData(next) {
     dataRef.current = next;
@@ -75,6 +82,11 @@ function SignalHouse() {
   const visibleLast = messages.at(-1)?.id;
   const records = useMemo(() => data ? archiveRecords(data) : [], [data]);
   const detail = records.find(record => record.id === detailId);
+  const today = localDate();
+  const todaySignal = data?.signals.find(signal => signal.date === today && signal.message);
+  const selectedSignal = data?.signals.find(signal => signal.date === signalDate);
+  const letter = selectedSignal ? testSignalLetter(data, selectedSignal) : null;
+  const canTestSignal = useMemo(() => testSignalCandidates(records, today).size > 0, [records, today]);
 
   useEffect(() => { void load(); }, []);
   useEffect(() => { scroll.current?.scrollTo({ y: 0, animated: false }); }, [route, setup?.index]);
@@ -89,9 +101,12 @@ function SignalHouse() {
     }).catch(() => {});
   }, [roomId, visibleLast, visibleUnread]);
   useEffect(() => {
-    if (route !== 'chat') return undefined;
+    if (route !== 'chat' && route !== 'settings') return undefined;
     let active = true;
-    const check = async () => { const ready = await chatStatus(); if (active) setAvailable(ready); };
+    const check = async () => {
+      const status = await chatStatus();
+      if (active) setConnection(current => ({ ...status, provider: status.provider ?? current.provider }));
+    };
     void check();
     const timer = setInterval(check, 7000);
     return () => { active = false; clearInterval(timer); };
@@ -102,7 +117,7 @@ function SignalHouse() {
       if (working.current) return true;
       if (route === 'setup') { exitSetup(); return true; }
       if (route === 'record') { go('archive'); return true; }
-      if (route === 'signal-preview') { go('settings'); return true; }
+      if (route === 'signal') { go(signalOrigin.current); return true; }
       if (['chat', 'archive', 'settings'].includes(route)) { go('house'); return true; }
       return false;
     });
@@ -190,10 +205,41 @@ function SignalHouse() {
     go('chat');
   }
 
+  function deliverSignal() {
+    if (working.current || requesting.current.size) return;
+    if (connection.provider === 'baze' && !bazeConsent) {
+      setBazeNotice(true);
+      return;
+    }
+    void perform(async () => {
+      const prepared = prepareTestSignal(dataRef.current);
+      if (!prepared) throw new Error('오늘 나눈 대화에서 AI 답장을 받은 뒤 시도해 주세요.');
+      const message = await getSignal(prepared.sender, prepared.messages, bazeConsent);
+      await save(current => receiveTestSignal(current, prepared.signal, message));
+    });
+  }
+
+  function openSignal(date) {
+    if (working.current) return;
+    signalOrigin.current = route;
+    setSignalDate(date);
+    go('signal');
+  }
+
+  function showSignals() {
+    setArchiveTab('signals');
+    go('archive');
+  }
+
   async function send(character, value, retryId) {
     const text = value.trim();
     const id = character.id;
     if (!text || requesting.current.has(id) || working.current) return;
+    const safe = safetyReply(text, character);
+    if (!safe && connection.provider === 'baze' && !bazeConsent) {
+      setBazeNotice(true);
+      return;
+    }
     requesting.current.add(id);
     setPending(current => ({ ...current, [id]: true }));
     setChatErrors(current => ({ ...current, [id]: '' }));
@@ -209,12 +255,14 @@ function SignalHouse() {
         thread = saved.threads[id];
         setDrafts(current => current[id]?.trim() === text ? { ...current, [id]: '' } : current);
       }
-      const safe = safetyReply(text, character);
-      const result = safe ? { reply: safe, source: 'safety' } : await getReply(character, thread);
+      const result = safe ? { reply: safe, source: 'safety' } : await getReply(character, thread, bazeConsent);
       const response = newMessage('assistant', result.reply, result.source);
       await save(current => ({
         ...current, threads: { ...current.threads, [id]: [...(current.threads[id] ?? []), response] },
       }));
+      if (connection.provider === 'baze' || result.usage) {
+        setBazeUsage(current => ({ ...current, [id]: result.usage ?? null }));
+      }
     } catch (failure) {
       setChatErrors(current => ({ ...current, [id]: failure.message || '답장을 받지 못했어요.' }));
     } finally {
@@ -234,13 +282,17 @@ function SignalHouse() {
         setLoadError('');
         setSetup(null);
         setRoomId(null);
+        setBazeConsent(false);
         setRoute('intro');
       } else {
-        await save(current => ({ ...current, entries: [], threads: {}, readThrough: {} }));
+        await save(current => ({ ...current, entries: [], threads: {}, readThrough: {}, signals: [] }));
       }
       setDetailId(null);
+      setSignalDate(null);
+      setArchiveTab('records');
       setDrafts({});
       setChatErrors({});
+      setBazeUsage({});
       setConfirm(null);
     });
   }
@@ -248,11 +300,12 @@ function SignalHouse() {
   const ready = data?.characters.length === 2 && !loadError;
   const wide = width >= 800 && ready;
   const chat = route === 'chat' && person;
-  const tab = route === 'archive' || route === 'record' ? 'archive' : route === 'settings' || route === 'signal-preview' ? 'settings' : 'house';
+  const tab = ['archive', 'record', 'signal'].includes(route) ? 'archive' : route === 'settings' ? 'settings' : 'house';
   const showTabs = ready && ['house', 'archive', 'settings'].includes(route);
   const tabs = <Tabs route={tab} onNavigate={go} disabled={busy} />;
   const home = ready ? <Conversations characters={data.characters} threads={data.threads} readThrough={data.readThrough}
-    selectedRoom={chat ? roomId : null} onOpen={openRoom} /> : null;
+    selectedRoom={chat ? roomId : null} onOpen={openRoom} todaySignal={todaySignal} canTestSignal={canTestSignal}
+    onOpenSignal={openSignal} /> : null;
   let body;
   if (loadError) body = <View style={s.recovery}><Notice danger>{loadError}</Notice>
     <Action onPress={() => void load()}>다시 읽기</Action><Action kind="soft" onPress={() => setConfirm('all')}>저장 데이터 삭제</Action></View>;
@@ -261,11 +314,14 @@ function SignalHouse() {
   else if (route === 'setup') body = <Setup {...setup} onChoose={chooseSetup} onChange={changeCharacter} onPickPhoto={pickPhoto}
     onSave={saveSetup} onBack={exitSetup} busy={busy} error={error} />;
   else if (route === 'house') body = wide ? <EmptyChat /> : home;
-  else if (route === 'archive') body = <Archive records={records} onOpen={record => { setDetailId(record.id); go('record'); }} />;
+  else if (route === 'archive') body = <Archive records={records} signals={data.signals} tab={archiveTab} onTabChange={setArchiveTab}
+    onOpen={record => { setDetailId(record.id); go('record'); }} onOpenSignal={openSignal} />;
   else if (route === 'record' && detail) body = <Record record={detail} onBack={() => go('archive')} onRoom={openRoom} />;
-  else if (route === 'signal-preview') body = <SignalPreview onBack={() => go('settings')} />;
-  else body = <Settings onEdit={() => startSetup(0, true)} onRemove={type => { setError(''); setConfirm(type); }}
-    onSignalPreview={() => go('signal-preview')} />;
+  else if (route === 'signal' && letter) body = <SignalLetter signal={selectedSignal} letter={letter}
+    characters={data.characters} busy={busy} error={error} onBack={() => go(signalOrigin.current)}
+    onReveal={guessId => void perform(() => save(current => revealTestSignal(current, selectedSignal.date, guessId)))}
+    onArchive={showSignals} />;
+  else body = <Settings provider={connection.provider} onEdit={() => startSetup(0, true)} onRemove={type => { setError(''); setConfirm(type); }} />;
 
   return <SafeAreaView style={s.root}>
     <StatusBar style="dark" />
@@ -276,12 +332,17 @@ function SignalHouse() {
           onChange={value => setDrafts(current => ({ ...current, [person.id]: value }))}
           onSend={(value, retryId) => void send(person, value, retryId)}
           onBack={() => go('house')} onEdit={() => startSetup(data.characters.indexOf(person), true)}
-          pending={Boolean(pending[person.id])} error={chatErrors[person.id]} available={available} />
+          pending={Boolean(pending[person.id])} error={chatErrors[person.id]} connection={connection}
+          usage={bazeUsage[person.id]} onBazeNotice={() => setBazeNotice(true)} todaySignal={todaySignal}
+          canTestSignal={canTestSignal} testingSignal={busy} waitingForReplies={Object.values(pending).some(Boolean)}
+          signalError={error} onTestSignal={deliverSignal} onOpenSignal={openSignal} />
           : <ScrollView ref={scroll} key={route} style={s.flex} contentContainerStyle={s.scrollBody} keyboardShouldPersistTaps="handled">{body}</ScrollView>}
         {!wide && showTabs ? tabs : null}
       </KeyboardAvoidingView>
     </View>
     <Confirm type={confirm} onCancel={() => { if (!busy) { setConfirm(null); setError(''); } }} onConfirm={deleteData} busy={busy} error={error} />
+    <BazeConsent visible={bazeNotice} onCancel={() => setBazeNotice(false)}
+      onAccept={() => { setBazeConsent(true); setBazeNotice(false); }} />
   </SafeAreaView>;
 }
 

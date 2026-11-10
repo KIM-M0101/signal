@@ -10,7 +10,6 @@ const icons = {
   archive: 'M4 8v12h16V8M3 4h18v4H3zM9 12h6',
   gear: 'M4 7h16M4 17h16M9 4v6m6 4v6',
   moon: 'M20 15a8 8 0 1 1-11-11 8 8 0 0 0 11 11ZM17 2v6m-3-3h6',
-  lock: 'M8 10V7a4 4 0 0 1 8 0v3M6 10h12v11H6z',
   arrow: 'M4 12h16m-6-6 6 6-6 6',
   up: 'M12 20V4m-6 6 6-6 6 6',
   back: 'm15 18-6-6 6-6',
@@ -186,7 +185,19 @@ function Emblem({ icon }) {
   return <View style={s.emblem}><Icon name={icon} size={18} /></View>;
 }
 
-export function Conversations({ characters, threads, readThrough, selectedRoom, onOpen }) {
+function SignalArrival({ signal, onOpen, compact = false }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={signal.opened ? '시그널 다시 보기' : '시그널 열기'}
+    onPress={() => onOpen(signal.date)} style={[s.signalCard, compact && s.signalCompact]}>
+    <Emblem icon="mail" />
+    <View style={s.flex}>
+      <Text style={s.label}>{signal.opened ? '오늘의 시그널 다시 보기' : '오늘의 시그널이 도착했어요'}</Text>
+      <Text style={s.note}>도착 테스트 · 오후 10:00</Text>
+    </View>
+    {!signal.opened ? <Text style={s.tag}>새 편지</Text> : <Icon name="next" size={16} />}
+  </Pressable>;
+}
+
+export function Conversations({ characters, threads, readThrough, selectedRoom, onOpen, todaySignal, canTestSignal, onOpenSignal }) {
   const rooms = characters.map(person => {
     const messages = threads[person.id] ?? [];
     return { person, last: messages.at(-1), unread: unreadCount(messages, readThrough[person.id]) };
@@ -208,13 +219,12 @@ export function Conversations({ characters, threads, readThrough, selectedRoom, 
         </View>
       </Pressable>)}
     </View>
-    <View style={s.signalCard}>
+    {todaySignal ? <SignalArrival signal={todaySignal} onOpen={onOpenSignal} /> : <View style={s.signalCard}>
       <Emblem icon="moon" />
       <View style={s.flex}><Text style={s.label}>오늘의 시그널</Text>
-        <Text style={s.note}>지금은 대화와 지난 기록을 볼 수 있어요.</Text>
-        <View style={s.locked}><Icon name="lock" size={13} /><Text style={s.note}>준비 중</Text></View>
+        <Text style={s.note}>{canTestSignal ? '채팅방에서 밤 10시 도착 테스트를 할 수 있어요.' : '오늘 채팅에서 AI 답장을 받으면 도착을 시험할 수 있어요.'}</Text>
       </View>
-    </View>
+    </View>}
   </View>;
 }
 
@@ -223,7 +233,10 @@ export function EmptyChat() {
     <Text style={s.note}>채팅 목록에서 캐릭터를 선택해요.</Text></View>;
 }
 
-export function Chat({ person, messages, value, onChange, onSend, onBack, onEdit, pending, error, available }) {
+export function Chat({
+  person, messages, value, onChange, onSend, onBack, onEdit, pending, error, connection, usage, onBazeNotice,
+  todaySignal, canTestSignal, testingSignal, waitingForReplies, signalError, onTestSignal, onOpenSignal,
+}) {
   const list = useRef(null);
   const nearEnd = useRef(true);
   const [focused, setFocused] = useState(false);
@@ -247,7 +260,13 @@ export function Chat({ person, messages, value, onChange, onSend, onBack, onEdit
       </Pressable>
       <Text style={s.chatSpark}>✦</Text>
     </View>
-    {available === false ? <View style={s.connection}><Text style={s.note}>로컬 AI 서버에 연결할 수 없어요.</Text></View> : null}
+    {connection.provider === 'baze' ? <View style={[s.connection, s.bazeStatus]}>
+      <View style={s.flex}>
+        <Text style={s.note}>{connection.available ? '베이즈 · GPT-6 Luna · 테스트' : '베이즈 테스트 서버에 연결할 수 없어요.'}</Text>
+        {usage ? <Text style={s.note}>최근 답장 · 입력 {usage.input} / 출력 {usage.output}토큰</Text> : null}
+      </View>
+      <Pressable accessibilityRole="button" style={s.bazeInfoButton} onPress={onBazeNotice}><Text style={s.segmentLabel}>전송 안내</Text></Pressable>
+    </View> : connection.available === false ? <View style={s.connection}><Text style={s.note}>로컬 AI 서버에 연결할 수 없어요.</Text></View> : null}
     <ScrollView ref={list} style={s.flex} contentContainerStyle={s.messages} onContentSizeChange={scrollToEnd}
       onLayout={scrollToEnd} onScroll={({ nativeEvent: { contentSize, layoutMeasurement, contentOffset } }) => {
         nearEnd.current = contentSize.height - layoutMeasurement.height - contentOffset.y < 100;
@@ -285,27 +304,40 @@ export function Chat({ person, messages, value, onChange, onSend, onBack, onEdit
           <Text style={s.dangerText}>다시 시도</Text></Pressable> : null}
       </View> : null}
     </ScrollView>
+    {todaySignal ? <SignalArrival signal={todaySignal} onOpen={onOpenSignal} compact />
+      : canTestSignal ? <View style={s.signalTest}>
+        <Action icon="moon" kind="soft" disabled={testingSignal || waitingForReplies} onPress={onTestSignal}>
+          {testingSignal ? '시그널을 쓰는 중이에요…' : '밤 10시 도착 테스트'}
+        </Action>
+        {signalError ? <Notice danger>{signalError}</Notice> : null}
+      </View> : null}
     <View style={[s.composer, focused && s.composerFocused]}>
       <TextInput accessibilityLabel="메시지" multiline numberOfLines={1} value={value} maxLength={MAX_ENTRY} onChangeText={onChange}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         style={s.chatInput} placeholder="오늘 있었던 일을 들려줘요" placeholderTextColor={C.muted} />
       <Pressable accessibilityRole="button" accessibilityLabel="메시지 보내기"
-        accessibilityState={{ disabled: pending || !value.trim() }} disabled={pending || !value.trim()}
-        style={[s.send, (pending || !value.trim()) && s.disabled]} onPress={send}>
+        accessibilityState={{ disabled: pending || testingSignal || !value.trim() }} disabled={pending || testingSignal || !value.trim()}
+        style={[s.send, (pending || testingSignal || !value.trim()) && s.disabled]} onPress={send}>
         <Icon name="up" color={C.paper} size={20} />
       </Pressable>
     </View>
   </View>;
 }
 
-export function Archive({ records, onOpen }) {
-  const [tab, setTab] = useState('records');
+export function Archive({ records, signals, tab, onTabChange, onOpen, onOpenSignal }) {
   return <View style={s.page}>
     <Header title="보관함" />
     <View style={s.content}>
-      <Segment options={[[ 'records', '지난 기록' ], [ 'signals', '받은 시그널' ]]} value={tab} onChange={setTab} />
-      {tab === 'signals' ? <View style={s.empty}><Emblem icon="mail" /><Text style={s.title}>받은 시그널이 없어요</Text>
-        <Text style={s.note}>오늘의 시그널은 아직 준비 중이에요.</Text></View> : null}
+      <Segment options={[[ 'records', '지난 기록' ], [ 'signals', '받은 시그널' ]]} value={tab} onChange={onTabChange} />
+      {tab === 'signals' && !signals.length ? <View style={s.empty}><Emblem icon="mail" /><Text style={s.title}>받은 시그널이 없어요</Text>
+        <Text style={s.note}>AI와 대화한 뒤 밤 10시 도착 테스트를 해보세요.</Text></View> : null}
+      {tab === 'signals' ? signals.map(signal => <Pressable key={signal.date} accessibilityRole="button"
+        onPress={() => onOpenSignal(signal.date)} style={({ pressed }) => [s.record, pressed && s.pressed]}>
+        <Emblem icon="mail" />
+        <View style={s.roomText}><Text style={s.label}>{dateLabel(signal.date)}</Text>
+          <Text style={s.note}>테스트 시그널 · 오후 10:00</Text></View>
+        {signal.opened ? <Icon name="next" size={16} /> : <Text style={s.tag}>새 편지</Text>}
+      </Pressable>) : null}
       {tab === 'records' && records.length === 0 ? <View style={s.empty}><Emblem icon="archive" /><Text style={s.title}>저장된 기록이 없어요</Text>
         <Text style={s.note}>채팅에서 나눈 이야기를 여기에서 볼 수 있어요.</Text></View> : null}
       {tab === 'records' ? records.map((record, index) => <React.Fragment key={record.id}>
@@ -343,7 +375,7 @@ function SettingsRow({ children, onPress, danger = false }) {
   </Pressable>;
 }
 
-export function Settings({ onEdit, onRemove, onSignalPreview }) {
+export function Settings({ provider, onEdit, onRemove }) {
   return <View style={s.page}>
     <Header title="개인정보와 기록" />
     <View style={s.content}>
@@ -353,11 +385,12 @@ export function Settings({ onEdit, onRemove, onSignalPreview }) {
           <Text style={s.note}>프로필과 대화를 다시 열 수 있게 이 기기나 브라우저에 저장해요. 직접 삭제하거나 앱 데이터를 지울 때까지 보관돼요.</Text>
         </View>
       </View>
-      <Text style={s.note}>답장에는 선택한 방의 최근 대화와 캐릭터의 텍스트 설정만 사용해요. 이미지는 이 기기에 저장하고, 답장은 개발 PC의 로컬 모델에서 생성해요.</Text>
+      <Text style={s.note}>{provider === 'baze'
+        ? '베이즈 테스트에서는 동의 후 선택한 방의 최근 메시지와 캐릭터 텍스트 설정을 답장 생성에 사용해요. 프로필 이미지는 이 기기에 보관해요.'
+        : '답장에는 선택한 방의 최근 대화와 캐릭터의 텍스트 설정만 사용해요. 이미지는 이 기기에 저장하고, 답장은 개발 PC의 로컬 모델에서 생성해요.'}</Text>
       <SettingsRow onPress={onEdit}>캐릭터 편집</SettingsRow>
       <SettingsRow danger onPress={() => onRemove('entries')}>대화 기록 삭제</SettingsRow>
       <SettingsRow danger onPress={() => onRemove('all')}>캐릭터 설정과 대화 삭제</SettingsRow>
-      <SettingsRow onPress={onSignalPreview}>시그널 후속안 미리보기</SettingsRow>
     </View>
   </View>;
 }
@@ -366,7 +399,7 @@ export function Confirm({ type, onCancel, onConfirm, busy, error }) {
   return <Modal visible={Boolean(type)} transparent animationType="fade" onRequestClose={onCancel}>
     <View style={s.modalLayer}><View style={s.dialog} accessibilityViewIsModal>
       <Text accessibilityRole="header" style={s.title}>{type === 'entries' ? '대화 기록을 삭제할까요?' : '캐릭터 설정과 대화를 삭제할까요?'}</Text>
-      <Text style={s.body}>{type === 'entries' ? '두 채팅방의 대화와 보관함의 지난 기록을 이 기기에서 지워요.' : '두 캐릭터의 프로필과 이미지, 대화와 지난 기록을 이 기기에서 지워요.'}</Text>
+      <Text style={s.body}>{type === 'entries' ? '두 채팅방의 대화, 지난 기록, 받은 시그널을 이 기기에서 지워요.' : '두 캐릭터의 프로필과 이미지, 대화, 받은 시그널을 이 기기에서 지워요.'}</Text>
       {error ? <Notice danger>{error}</Notice> : null}
       <View style={s.formRow}><View style={s.flex}><Action kind="soft" onPress={onCancel} disabled={busy}>취소</Action></View>
         <View style={s.flex}><Action kind="danger" onPress={onConfirm} disabled={busy}>{busy ? '삭제 중…' : '삭제'}</Action></View></View>
@@ -374,41 +407,45 @@ export function Confirm({ type, onCancel, onConfirm, busy, error }) {
   </Modal>;
 }
 
-const demoStates = {
-  none: ['오늘 기록이 없어요', '오늘 이야기를 나눈 날에 시그널을 받을 수 있어요.', '오늘은 잠겨 있어요'],
-  early: ['오후 10시에 열려요', '오늘 나눈 이야기가 있어요. 오후 10시가 되면 시그널을 볼 수 있어요.', '아직 열 수 없어요'],
-  night: ['시그널이 도착했어요', '오늘 이야기를 들은 캐릭터 중 누가 메시지를 보냈을까요?', '시그널 열기'],
-};
-const demoPeople = [{ name: '윤서', avatar: 'sol' }, { name: '하온', avatar: 'haon' }];
-const demoLetter = '오늘 얘기해 준 문제 두 개, 기억할게. 하기 싫은 날에도 시작한 너한테 이 말을 꼭 해주고 싶었어.';
+export function BazeConsent({ visible, onCancel, onAccept }) {
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <View style={s.modalLayer}><View style={s.dialog} accessibilityViewIsModal>
+      <Text accessibilityRole="header" style={s.title}>베이즈 AI 테스트</Text>
+      <Text style={s.body}>GPT-6 Luna가 답장할 수 있도록 현재 메시지, 같은 방의 최근 대화, 캐릭터의 이름·호칭·말투·성격을 베이즈로 보내요. 시그널 도착을 테스트하면 발신 캐릭터와 오늘 나눈 최근 대화로 하루 마무리 메시지를 써요. 프로필 이미지는 기기에 보관해요.</Text>
+      <Text style={s.body}>학교 계정의 API 크레딧을 사용하는 테스트예요. 가상의 이름과 대화만 입력해 주세요. 외부 서비스의 보관 조건은 학교 이용 정책을 확인해 주세요.</Text>
+      <Action onPress={onAccept}>동의하고 테스트하기</Action>
+      <Action kind="soft" onPress={onCancel}>닫기</Action>
+    </View></View>
+  </Modal>;
+}
 
-export function SignalPreview({ onBack }) {
-  const [mode, setMode] = useState('night');
-  const [step, setStep] = useState('arrived');
-  const [guess, setGuess] = useState(null);
-  const [title, caption, button] = demoStates[mode];
+export function SignalLetter({ signal, letter, characters, onBack, onReveal, onArchive, busy, error }) {
+  const candidates = characters.filter(person => signal.candidateIds.includes(person.id));
+  const picked = candidates.find(person => person.id === signal.guessId);
+  const showGuess = candidates.length > 1 && !signal.opened;
   return <View style={s.page}>
-    <Header title={step === 'saved' ? '받은 시그널 예시' : '오늘의 시그널'} onBack={onBack} tag="후속안" />
+    <Header title="오늘의 시그널" onBack={onBack} tag="도착 테스트" />
     <View style={s.content}>
-      <Text style={s.note}>예시 캐릭터와 기록으로 살펴보는 팀 검토용 화면이에요.</Text>
-      {step !== 'saved' ? <>
-        <Segment options={[[ 'none', '기록 없음' ], [ 'early', '오후 9시' ], [ 'night', '오후 10시' ]]} value={mode}
-          onChange={next => { setMode(next); setStep('arrived'); setGuess(null); }} />
-        <View style={s.night}><Orbit night /><Text style={s.nightTime}>PM 10:00</Text>
-          <Text style={[s.title, s.whiteText]}>{title}</Text><Text style={s.nightCopy}>{caption}</Text></View>
-      </> : null}
-      {step === 'arrived' ? <Action icon="arrow" disabled={mode !== 'night'} onPress={() => setStep('guess')}>{button}</Action> : null}
-      {step === 'guess' ? <View style={s.guess}>
+      <View style={s.night}><Orbit night /><Text style={s.nightTime}>PM 10:00</Text>
+        <Text style={[s.title, s.whiteText]}>{signal.opened ? '보낸 사람 · ' + letter.sender.name : '오늘의 시그널이 도착했어요'}</Text>
+        <Text style={s.nightCopy}>{dateLabel(signal.date)} · 시연 시각</Text>
+      </View>
+      {showGuess ? <View style={s.guess}>
         <Text style={s.title}>누가 보냈을까요?</Text>
-        <View style={s.formRow}>{demoPeople.map((person, index) => <Pressable key={person.name} accessibilityRole="button" accessibilityLabel={person.name}
-          style={s.guessChoice} onPress={() => { setGuess(index); setStep('result'); }}><Avatar person={person} size={42} /><Text style={s.label}>{person.name}</Text></Pressable>)}</View>
-      </View> : null}
-      {step === 'result' || step === 'saved' ? <View style={s.recordDetail}>
-        <Text style={s.title}>보낸 사람 · 윤서</Text>
-        {step === 'result' ? <Text style={s.note}>{guess === 0 ? '맞혔어요!' : '고른 캐릭터 · 하온'}</Text> : <Text style={s.note}>후속안 예시 · 오후 10:00</Text>}
-        <Text style={s.messageText}>{demoLetter}</Text>
-        <Action kind="soft" onPress={() => setStep(step === 'result' ? 'saved' : 'arrived')}>{step === 'result' ? '받은 시그널 예시 보기' : '시그널 다시 보기'}</Action>
-      </View> : null}
+        <View style={s.formRow}>{candidates.map(person => <Pressable key={person.id} accessibilityRole="button" accessibilityLabel={person.name}
+          accessibilityState={{ disabled: busy }} disabled={busy} style={s.guessChoice} onPress={() => onReveal(person.id)}>
+          <Avatar person={person} size={42} /><Text style={s.label}>{person.name}</Text>
+        </Pressable>)}</View>
+      </View> : !signal.opened ? <Action icon="mail" disabled={busy} onPress={() => onReveal(null)}>편지 읽기</Action> : <>
+        {picked ? <Text style={s.note}>{picked.id === letter.sender.id ? '맞혔어요!' : '내가 고른 캐릭터 · ' + picked.name}</Text> : null}
+        {letter.story ? <View style={s.recordDetail}><Text style={s.label}>오늘 나눈 이야기</Text><Text style={s.messageText}>{letter.story}</Text></View> : null}
+        <View style={s.recordDetail}>
+          <View style={s.row}><Avatar person={letter.sender} size={35} /><Text style={s.label}>{letter.story ? '이전 테스트에서 받은 응원' : '오늘 하루를 마무리하며'}</Text></View>
+          <Text style={s.messageText}>{letter.message}</Text>
+        </View>
+        <Action kind="soft" icon="archive" onPress={onArchive}>받은 시그널 보기</Action>
+      </>}
+      {error ? <Notice danger>{error}</Notice> : null}
     </View>
   </View>;
 }
