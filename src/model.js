@@ -9,6 +9,10 @@ export const TONES = ['장난스럽게', '친근하게', '차분하게', '다정
 export const STORAGE_KEY = 'signal-house-team-v1';
 export const MAX_ENTRY = 500;
 export const MAX_PHOTO = 180_000;
+export const MAX_PERSONALITY = 200;
+export const MAX_REPLY = 650;
+export const CONTEXT_MESSAGES = 10;
+export const CONTEXT_CHARS = 1_800;
 
 export const DEFAULT_CHARACTERS = Object.freeze([
   { id: 'first', name: '솔', avatar: 'sol', relation: '동갑', address: '', tone: '다정하게', photo: '' },
@@ -23,7 +27,7 @@ export const TONE_PROFILES = {
 };
 
 export function emptyState() {
-  return { version: 1, characters: [], entries: [] };
+  return { version: 1, characters: [], entries: [], threads: {} };
 }
 
 export function cleanCharacter(value, id) {
@@ -35,6 +39,7 @@ export function cleanCharacter(value, id) {
   return {
     id, name: value.name.trim().slice(0, 16), avatar: value.avatar, relation: value.relation,
     address: typeof value.address === 'string' ? value.address.trim().slice(0, 16) : '',
+    personality: typeof value.personality === 'string' ? value.personality.trim().slice(0, MAX_PERSONALITY) : '',
     tone: value.tone, photo,
   };
 }
@@ -48,6 +53,10 @@ export function readState(value) {
   const characters = DEFAULT_CHARACTERS.map((preset, index) => cleanCharacter(raw.characters[index], preset.id));
   return {
     version: 1, characters: characters.every(Boolean) ? characters : [],
+    threads: Object.fromEntries(DEFAULT_CHARACTERS.flatMap(({ id }) => {
+      const messages = raw.threads?.[id];
+      return Array.isArray(messages) ? [[id, messages.filter(validMessage)]] : [];
+    })),
     entries: raw.entries.filter(entry => typeof entry?.id === 'string' && typeof entry.text === 'string'
       && typeof entry.date === 'string' && Number.isFinite(Date.parse(entry.createdAt))
       && ['prepared', 'generated', 'fallback', 'safety', 'support'].includes(entry.status)
@@ -55,6 +64,33 @@ export function readState(value) {
       && entry.replies.every(reply => typeof reply?.name === 'string' && typeof reply.message === 'string'
         && typeof reply.id === 'string' && AVATARS.some(avatar => avatar.id === reply.avatar))),
   };
+}
+
+function validMessage(message) {
+  return typeof message?.id === 'string' && ['user', 'assistant'].includes(message.role)
+    && typeof message.text === 'string' && message.text.trim().length > 0
+    && message.text.length <= (message.role === 'user' ? MAX_ENTRY : MAX_REPLY)
+    && typeof message.createdAt === 'string' && Number.isFinite(Date.parse(message.createdAt));
+}
+
+export function newMessage(role, value, source, now = new Date()) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  const message = { id: `${now.getTime()}-${Math.random().toString(36).slice(2, 10)}`,
+    role, text, createdAt: now.toISOString(), ...(source ? { source } : {}) };
+  if (!validMessage(message)) throw new Error('보낼 이야기는 1~500자로 적어 주세요.');
+  return message;
+}
+
+export function conversationContext(thread) {
+  let characters = 0;
+  const context = [];
+  for (const message of thread.slice(-CONTEXT_MESSAGES).reverse()) {
+    if (characters + message.text.length > CONTEXT_CHARS) break;
+    characters += message.text.length;
+    context.unshift({ role: message.role, content: message.text });
+  }
+  if (context[0]?.role === 'assistant') context.shift();
+  return context;
 }
 
 export function localDate(now = new Date()) {
@@ -72,6 +108,10 @@ function category(text) {
   if (/(죽고\s*싶|자살|자해|목숨.{0,10}(끊|버리)|해치고\s*싶|해칠\s*거|학대|폭력을?\s*당)/u.test(text)) return 'safety';
   if (/(힘들|불안|우울|막막|지쳤|울었|두렵|망했|실패|슬펐|못했|못\s*하|때렸|괴롭혔|훔쳤)/u.test(text)) return 'support';
   return 'ordinary';
+}
+
+export function safetyReply(text, character) {
+  return category(text) === 'safety' ? preparedReply(character, text, 'safety') : null;
 }
 
 function entryExcerpt(text) {
