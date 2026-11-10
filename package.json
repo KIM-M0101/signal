@@ -1,0 +1,31 @@
+{
+  "name": "signal-house",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --port 8082",
+    "web": "npm run build:web && npm run serve:web",
+    "build:web": "expo export --platform web",
+    "serve:web": "node server/index.js",
+    "serve:baze": "node --env-file=.env.baze.local server/index.js --baze",
+    "ai:setup:windows": "powershell -NoProfile -File scripts/setup-local-ai.ps1",
+    "ai:compare:baze": "powershell -NoProfile -File scripts/compare-baze.ps1",
+    "ai:serve:windows": ".local-ai\\llama-b12244\\llama-server.exe -m .local-ai/qwen2.5-1.5b-instruct-q4_k_m.gguf --host 127.0.0.1 --port 8083 --alias signal-local -c 4096 -t 6 -ngl 0 --parallel 1 --no-webui --log-disable",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~57.0.18",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~57.0.32",
+    "expo-image-picker": "~57.0.21",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4",
+    "react-native-web": "^0.21.2"
+  }
+}
