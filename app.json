@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "시그널 하우스",
+    "slug": "signal-house",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.signalhouse.prototype"
+    },
+    "android": {
+      "package": "com.signalhouse.prototype"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "테스트용 캐릭터 이미지를 선택할 때 사진 보관함을 사용합니다.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
+}

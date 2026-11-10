@@ -1,0 +1,26 @@
+{
+  "name": "signal-house",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "web": "expo start --web --localhost --port 8081",
+    "build:web": "expo export --platform web",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~57.0.18",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~57.0.32",
+    "expo-image-picker": "~57.0.21",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4",
+    "react-native-web": "^0.21.2"
+  }
+}
