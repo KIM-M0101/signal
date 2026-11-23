@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "시그널 하우스",
+    "name": "하루시그널",
     "slug": "signal-house",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -19,11 +19,18 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "테스트용 캐릭터 이미지를 선택할 때 사진 보관함을 사용합니다.",
+          "photosPermission": "캐릭터 프로필 사진을 고를 때 사진 보관함을 사용합니다.",
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#6C4BC1"
+        }
+      ],
+      "expo-font"
     ]
   }
 }

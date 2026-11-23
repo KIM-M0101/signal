@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { conversationContext } from './model.js';
+import { characterPrompt, conversationContext, userPrompt } from './model.js';
 
 function apiUrl(path) {
   if (Platform.OS === 'web') return path;
@@ -38,43 +38,53 @@ export async function chatStatus() {
   return { available: false, provider: null };
 }
 
-export function getReply(person, thread, bazeConsent = false) {
-  return generate('/api/chat', person, conversationContext(thread), bazeConsent);
+export async function getReply(person, profile, thread, bazeConsent = false) {
+  return post('/api/chat', {
+    character: characterPrompt(person), user: userPrompt(profile), messages: conversationContext(thread),
+  }, bazeConsent, 50_000);
 }
 
-export async function getSignal(person, messages, bazeConsent = false) {
-  const { reply, source } = await generate('/api/signal', person, messages, bazeConsent);
-  if (source !== 'ai') throw new Error('시그널을 받지 못했어요. 다시 시도해 주세요.');
-  return reply;
+export async function getDiaryResult(characters, profile, diary, bazeConsent = false) {
+  const result = await post('/api/diary', {
+    characters: characters.map(characterPrompt), user: userPrompt(profile), diary: { emoji: diary.emoji, text: diary.text },
+  }, bazeConsent, 150_000);
+  if (typeof result.comment !== 'string' || !result.comment.trim() || !Array.isArray(result.reactions)
+    || result.reactions.length !== 2 || !result.reactions.every(item => typeof item === 'string' && item.trim())) {
+    throw new Error('응원 메시지를 불러오지 못했어요.');
+  }
+  return { comment: result.comment.trim(), reactions: result.reactions.map(item => item.trim()), source: 'ai' };
 }
 
-async function generate(path, person, messages, bazeConsent) {
-  const { name, relation, tone, address, personality } = person;
+export async function getSignal(prepared, profile, bazeConsent = false) {
+  const result = await post('/api/signal', {
+    character: characterPrompt(prepared.sender), user: userPrompt(profile), diary: prepared.diary, messages: prepared.messages,
+  }, bazeConsent, 60_000);
+  if (typeof result.reply !== 'string' || !result.reply.trim()) throw new Error('시그널을 받지 못했어요.');
+  return result.reply.trim();
+}
+
+async function post(path, payload, bazeConsent, timeoutMs) {
   let response;
   try {
     response = await request(path, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        character: { name, relation, tone, address, personality },
-        messages,
-        ...(bazeConsent ? { bazeConsent: true } : {}),
-      }),
-    }, 50_000);
+      body: JSON.stringify({ ...payload, ...(bazeConsent ? { bazeConsent: true } : {}) }),
+    }, timeoutMs);
   } catch {
-    throw new Error('AI 서버에 연결하지 못했어요. 연결을 확인하고 다시 받아 주세요.');
+    throw new Error('AI 서버에 연결하지 못했어요. 연결을 확인하고 다시 시도해 주세요.');
   }
-  if (response.status === 429) throw new Error('다른 답장을 준비하고 있어요. 잠시 뒤 다시 받아 주세요.');
+  if (response.status === 429) throw new Error('다른 답장을 준비하고 있어요. 잠시 뒤 다시 시도해 주세요.');
   if (!response.ok) {
     const { error } = await response.json().catch(() => ({}));
     if (error === 'baze_consent_required') throw new Error('베이즈 전송 안내를 확인하고 다시 시도해 주세요.');
     if (error === 'baze_access') throw new Error('베이즈 API 키와 GPT-6 Luna 사용 권한을 확인해 주세요.');
     if (error === 'baze_limit') throw new Error('베이즈 크레딧 또는 호출 한도를 확인해 주세요.');
-    throw new Error('답장을 받지 못했어요. 잠시 뒤 다시 받아 주세요.');
+    throw new Error('답장을 받지 못했어요. 잠시 뒤 다시 시도해 주세요.');
   }
   const result = await response.json();
-  if (typeof result.reply !== 'string' || !result.reply.trim() || !['ai', 'safety'].includes(result.source)) {
-    throw new Error('답장을 받지 못했어요. 다시 받아 주세요.');
+  if (result.reply !== undefined && (typeof result.reply !== 'string' || !result.reply.trim() || !['ai', 'safety'].includes(result.source))) {
+    throw new Error('답장을 받지 못했어요. 다시 시도해 주세요.');
   }
   return result;
 }

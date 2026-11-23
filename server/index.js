@@ -7,4 +7,4 @@ const modelPort = Number(process.env.SIGNAL_MODEL_PORT ?? 8083);
 const server = createSignalServer({
   host, modelPort, provider: baze ? 'baze' : 'local', apiKey: baze ? process.env.BAZE_API_KEY : undefined,
 });
-server.listen(port, host, () => console.log(`Signal House: http://${host}:${port}`));
+server.listen(port, host, () => console.log(`하루시그널: http://${host}:${port}`));

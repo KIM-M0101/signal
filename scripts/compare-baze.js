@@ -7,8 +7,8 @@ const candidates = [
   { id: BAZE_MODEL, inputRate: 0.10, outputRate: 0.50 },
   { id: 'solar-mini4', inputRate: 0.10, outputRate: 0.40 },
 ];
-const yunseo = { name: '윤서', relation: '동갑', tone: '다정하게', address: '지우야', personality: '친한 친구처럼 짧고 따뜻하게 말해.' };
-const haon = { name: '하온', relation: '연하', tone: '차분하게', address: '지우 님', personality: '담백하게 이야기하고 힘든 날은 먼저 들어줘요.' };
+const yunseo = { name: '윤서', relation: '동갑', style: '다정하게', casual: true, address: '지우야', preference: '친한 친구처럼 짧고 따뜻하게 말해 줘.' };
+const haon = { name: '하온', relation: '연하', style: '차분하게', casual: false, address: '지우 님', preference: '힘든 날은 해결책보다 먼저 공감해 주세요.' };
 const achievement = '공부하기 싫었는데 수학 문제 두 개 풀었어.';
 const message = (content, role = 'user') => ({ role, content });
 const scenarios = [
