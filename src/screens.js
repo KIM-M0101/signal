@@ -469,12 +469,12 @@ export function AccountForm({ characters, onSubmit, onGuest, onBack, errors = {}
 
 // 5. 우리 채팅방
 export function Home({
-  profile, characters, affinity, threads, readThrough, todayDiary, todaySignal, now, night, onOpenRoom, onDiary, onSignals, onOpenSignal, onSettings,
+  profile, characters, affinity, threads, readThrough, todayDiary, todaySignal, now, night = false, onOpenRoom, onDiary, onSignals, onOpenSignal, onSettings,
 }) {
   const today = localDate(now);
   const background = useBackground();
   return <View style={s.page}>
-    <View style={[s.hero, { backgroundColor: background.hero }, night && s.heroNight]}>
+    <View style={[s.hero, { backgroundColor: background.page }, night && s.heroNight]}>
       <View style={s.rowBetween}><Brand night={night} />
         <Pressable accessibilityRole="button" accessibilityLabel="프로필·캐릭터 설정" onPress={onSettings} style={s.iconButton}>
           <Icon name="gear" color={night ? C.nightText : C.ink} /></Pressable>
@@ -969,7 +969,7 @@ function BackgroundPicker({ value, onSave }) {
         <View style={[s.swatchDot, { backgroundColor: item.swatch }]} />
       </Pressable>)}
     </View>
-    <Text style={s.note}>{backgroundOf(picked).label} · 채팅방, 일기, 설정 같은 낮 화면에 적용돼요. 시그널 화면은 밤하늘 그대로예요.</Text>
+    <Text style={s.note}>{backgroundOf(picked).label} · 채팅방, 일기, 설정 화면에 밤낮 상관없이 적용돼요. 시그널 화면은 밤하늘 그대로예요.</Text>
     <Action disabled={!changed} onPress={() => { onSave(picked); setSaved(true); }}>{saved && !changed ? '저장했어요' : '저장'}</Action>
   </View>;
 }

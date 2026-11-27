@@ -8,7 +8,7 @@ import { useFonts } from 'expo-font';
 import { chatStatus, getDiaryResult, getReply, getSignal } from './src/chat-api.js';
 import { cancelAllSignalNotices, cancelSignalNotice, scheduleSignalNotice } from './src/notify.js';
 import {
-  CHARACTER_IDS, DEFAULT_CHARACTERS, DEFAULT_PROFILE, MAX_PHOTO, countdown, createGuest, emptyPending, isGuest, isNight, registerAccount, STORAGE_KEY, addReply, applyDiaryResult, characterErrors,
+  CHARACTER_IDS, DEFAULT_CHARACTERS, DEFAULT_PROFILE, MAX_PHOTO, countdown, createGuest, emptyPending, isGuest, registerAccount, STORAGE_KEY, addReply, applyDiaryResult, characterErrors,
   checkAccountInput, cleanCharacter, cleanProfile, createAccount, currentUser, deleteAccount, deleteDiary, diaryFor, editDiary,
   emptyState, finishOnboarding, josa, guessSignal, letterSource, localDate, login, logout, markSignalRead, newMessage, prepareSignal,
   preparedSignal, profileErrors, readState, receiveSignal, safetyReply, signalCandidates, signalDue, submitDiary, updateUser,
@@ -598,7 +598,6 @@ function HaruSignal() {
   const showTabs = ready && TAB_ROUTES.includes(route);
   const person = route === 'chat' ? user?.characters.find(item => item.id === params.id) : null;
 
-  const night = isNight(now);
   const todaySignal = user?.signals.find(item => item.date === today) ?? null;
   const pendingStarted = Boolean(data?.pending && (data.pending.step !== 'profile' || data.pending.profile.nickname));
 
@@ -627,7 +626,7 @@ function HaruSignal() {
   else if (!user) body = <Loading>로그인 정보를 확인하고 있어요.</Loading>;
   else if (!ready) body = <Loading>캐릭터 설정을 확인하고 있어요.</Loading>;
   else if (route === 'house') body = <Home profile={user.profile} characters={user.characters} affinity={user.affinity} threads={user.threads}
-    readThrough={user.readThrough} todayDiary={todayDiary} todaySignal={todaySignal} now={now} night={night}
+    readThrough={user.readThrough} todayDiary={todayDiary} todaySignal={todaySignal} now={now}
     onOpenRoom={id => go('chat', { id })} onDiary={() => openDiary('house')} onSignals={() => go('signals')}
     onOpenSignal={openSignal} onSettings={() => go('settings')} />;
   else if (route === 'diaryWrite') body = <DiaryWrite date={today} value={diaryDraft} editing={params.editing}
@@ -661,7 +660,7 @@ function HaruSignal() {
     onEditProfile={() => editProfile('edit')} onEditCharacter={editCharacter} onRemove={askRemove} onLogout={signOut} onPrivacy={() => go('privacy')} /></>;
   else if (route !== 'chat' || !person) body = <View style={s.recovery}><Notice danger>화면을 불러오지 못했어요. 다시 시도해 주세요.</Notice>
     <Action onPress={() => go('house')}>채팅방으로</Action></View>;
-  const darkStatus = ['signals', 'signalDetail', 'senderPick', 'guessResult'].includes(route) || (route === 'house' && night);
+  const darkStatus = ['signals', 'signalDetail', 'senderPick', 'guessResult'].includes(route);
 
   const background = backgroundOf(user?.background);
   return <BackgroundContext.Provider value={background}><SafeAreaView style={s.root}>
