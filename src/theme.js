@@ -118,7 +118,7 @@ const base = {
   introArt: { borderRadius: 28, backgroundColor: '#F2EAFC', marginBottom: 6 },
   introTitle: { color: C.ink, fontSize: 40, lineHeight: 50, fontWeight: '700', letterSpacing: -1.6 },
 
-  // 캐릭터 설정
+  // 상대방 설정
   photoRow: { ...row, gap: 14 },
   avatarOption: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 26, borderWidth: 2, borderColor: 'transparent' },
   avatarSelected: { borderColor: C.accent },

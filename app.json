@@ -19,7 +19,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "캐릭터 프로필 사진을 고를 때 사진 보관함을 사용합니다.",
+          "photosPermission": "상대방 프로필 사진을 고를 때 사진 보관함을 사용합니다.",
           "cameraPermission": false,
           "microphonePermission": false
         }

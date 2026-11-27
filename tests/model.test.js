@@ -50,7 +50,7 @@ test('one diary per local day: duplicates, edits and deletions keep the day used
   assert.ok(submitDiary(first.user, { emoji: '😊', text: '또 쓸래' }, day(21)).duplicate);
   const answered = applyDiaryResult(first.user, '2026-11-22', result, day(20, 1));
   assert.equal(diaryFor(answered, '2026-11-22').status, 'done');
-  assert.equal(answered.threads.first.at(-1).source, 'diary');
+  assert.equal(answered.threads.first.filter(message => message.source === 'diary').length, 0);
   const edited = editDiary(answered, { emoji: '😊', text: '과제를 20분 했어.' }, day(21));
   assert.equal(edited.diary.status, 'pending');
   assert.equal(edited.user.threads.first.filter(m => m.source === 'diary').length, 0);
@@ -198,7 +198,8 @@ test('a day without a diary gets a signal from that day’s chat, sent by a char
   assert.deepEqual(signalCandidates(oldChat, day(23)), []);
 });
 
-test('the 동갑 relation is no longer offered and old characters move to 친구', () => {
-  assert.equal(cleanCharacter({ ...DEFAULT_CHARACTERS[0], relation: '동갑' }, 'first').relation, '친구');
-  assert.equal(DEFAULT_CHARACTERS[0].relation, '친구');
+test('동갑 is offered and old 친구 relations migrate to 동갑', () => {
+  assert.equal(cleanCharacter({ ...DEFAULT_CHARACTERS[0], relation: '동갑' }, 'first').relation, '동갑');
+  assert.equal(cleanCharacter({ ...DEFAULT_CHARACTERS[0], relation: '친구' }, 'first').relation, '동갑');
+  assert.equal(DEFAULT_CHARACTERS[0].relation, '동갑');
 });

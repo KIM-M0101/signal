@@ -3,13 +3,11 @@ import { sha256 } from './sha256.js';
 export const AVATARS = Object.freeze([
   { id: 'sol', label: '보라 아바타', color: '#E2D3F3' },
   { id: 'haon', label: '민트 아바타', color: '#D4E9DF' },
-  { id: 'ian', label: '초록 아바타', color: '#DDE7D6' },
-  { id: 'roa', label: '라일락 아바타', color: '#EAE0F3' },
 ]);
-export const RELATIONS = ['연상', '연하', '친구', '기타'];
-export const STYLES = ['다정하게', '차분하게', '재미있게'];
-export const USER_GENDERS = ['여성', '남성', '직접 입력', '응답하지 않음'];
-export const CHARACTER_GENDERS = ['여성', '남성', '직접 입력', '설정하지 않음'];
+export const RELATIONS = ['연상', '연하', '동갑', '기타'];
+export const STYLES = ['다정하게', '차분하게', '재미있게', '기타'];
+export const USER_GENDERS = ['여성', '남성', '응답하지 않음'];
+export const CHARACTER_GENDERS = ['여성', '남성', '설정하지 않음'];
 export const MOODS = Object.freeze([
   { emoji: '😊', label: '아주 좋아요', question: '오늘 가장 좋았던 장면은 무엇이었나요?' },
   { emoji: '🙂', label: '괜찮아요', question: '오늘 해낸 작은 일 하나를 들려주세요.' },
@@ -24,8 +22,8 @@ export const STAGES = Object.freeze([
   { min: 80, name: '오랜 친구' },
 ]);
 export const CHARACTER_COLORS = Object.freeze({
-  first: { main: '#C9507C', soft: '#FDF0F4', border: '#F4D6E1' },
-  second: { main: '#23857D', soft: '#EAF6F3', border: '#C9E7E0' },
+  first: { main: '#6C4BC1', soft: '#EFE8FB', border: '#D8C9F0' },
+  second: { main: '#6C4BC1', soft: '#EFE8FB', border: '#D8C9F0' },
 });
 export const STORAGE_KEY = 'harusignal-v2';
 export const MAX_ENTRY = 500;
@@ -41,17 +39,17 @@ export const AFFINITY = Object.freeze({ diary: 5, chat: 1, chatDailyMax: 5, corr
 export const CHARACTER_IDS = ['first', 'second'];
 
 export const DEFAULT_PROFILE = Object.freeze({
-  loginId: '', nickname: '', likes: '', dislikes: '', mbti: '', gender: '응답하지 않음', genderCustom: '',
+  loginId: '', nickname: '', likes: '', dislikes: '', mbti: '', gender: '응답하지 않음',
 });
 
 export const DEFAULT_CHARACTERS = Object.freeze([
   {
-    id: 'first', name: '윤서', avatar: 'sol', photo: '', address: '', relation: '친구', relationCustom: '',
-    style: '다정하게', casual: true, gender: '설정하지 않음', genderCustom: '', mbti: '', preference: '',
+    id: 'first', name: '윤서', avatar: 'sol', photo: '', address: '', relation: '동갑', relationCustom: '',
+    style: '다정하게', styleCustom: '', casual: true, gender: '설정하지 않음', mbti: '', preference: '',
   },
   {
     id: 'second', name: '하온', avatar: 'haon', photo: '', address: '', relation: '연하', relationCustom: '',
-    style: '차분하게', casual: false, gender: '설정하지 않음', genderCustom: '', mbti: '', preference: '',
+    style: '차분하게', styleCustom: '', casual: false, gender: '설정하지 않음', mbti: '', preference: '',
   },
 ]);
 
@@ -190,7 +188,8 @@ export function updateUser(state, change) {
 // ---------- 프로필 ----------
 
 export function cleanProfile(value = {}) {
-  const gender = pick(value.gender, USER_GENDERS, '응답하지 않음');
+  const inputGender = value.gender === '직접 입력' ? '응답하지 않음' : value.gender;
+  const gender = pick(inputGender, USER_GENDERS, '응답하지 않음');
   return {
     loginId: text(value.loginId, 20),
     nickname: text(value.nickname, 16),
@@ -198,7 +197,6 @@ export function cleanProfile(value = {}) {
     dislikes: text(value.dislikes, MAX_NOTE),
     mbti: text(value.mbti, 12),
     gender,
-    genderCustom: gender === '직접 입력' ? text(value.genderCustom, 16) : '',
   };
 }
 
@@ -208,9 +206,11 @@ export function profileErrors(value) {
 
 export function cleanCharacter(value, id) {
   const preset = DEFAULT_CHARACTERS.find(item => item.id === id) ?? DEFAULT_CHARACTERS[0];
-  // '동갑'은 선택지에서 빠졌어요. 예전에 저장된 값은 '친구'로 옮겨요.
-  const relation = value?.relation === '동갑' ? '친구' : pick(value?.relation, RELATIONS, preset.relation);
-  const gender = pick(value?.gender, CHARACTER_GENDERS, '설정하지 않음');
+  const inputRelation = value?.relation === '친구' ? '동갑' : value?.relation;
+  const relation = pick(inputRelation, RELATIONS, preset.relation);
+  const inputGender = value?.gender === '직접 입력' ? '설정하지 않음' : value?.gender;
+  const gender = pick(inputGender, CHARACTER_GENDERS, '설정하지 않음');
+  const style = pick(value?.style, STYLES, preset.style);
   const photo = typeof value?.photo === 'string' && value.photo.length <= MAX_PHOTO
     && /^data:image\/(?:jpeg|png);base64,[a-z0-9+/=]+$/i.test(value.photo) ? value.photo : '';
   return {
@@ -221,10 +221,10 @@ export function cleanCharacter(value, id) {
     address: text(value?.address, 16),
     relation,
     relationCustom: relation === '기타' ? text(value?.relationCustom, 16) : '',
-    style: pick(value?.style, STYLES, preset.style),
+    style,
+    styleCustom: style === '기타' ? text(value?.styleCustom, MAX_NOTE) : '',
     casual: typeof value?.casual === 'boolean' ? value.casual : preset.casual,
     gender,
-    genderCustom: gender === '직접 입력' ? text(value?.genderCustom, 16) : '',
     mbti: text(value?.mbti, 12),
     preference: text(value?.preference, MAX_NOTE),
   };
@@ -232,8 +232,9 @@ export function cleanCharacter(value, id) {
 
 export function characterErrors(value) {
   const errors = {};
-  if (!text(value?.name, 16)) errors.name = '캐릭터 이름을 입력해 주세요.';
+  if (!text(value?.name, 16)) errors.name = '상대방 이름을 입력해 주세요.';
   if (!text(value?.address, 16)) errors.address = '나를 부를 호칭을 입력해 주세요.';
+  if (value?.style === '기타' && !text(value?.styleCustom, MAX_NOTE)) errors.styleCustom = '대화 방식을 적어 주세요.';
   return errors;
 }
 
@@ -254,9 +255,9 @@ export function genderLabel(value, custom) {
 
 /** Text profile sent to the AI server. Photos never leave the device. */
 export function characterPrompt(person) {
-  const { name, address, style, casual, mbti, preference } = person;
+  const { name, address, style, styleCustom, casual, mbti, preference } = person;
   const gender = ['설정하지 않음', '응답하지 않음'].includes(person.gender) ? '' : genderLabel(person.gender, person.genderCustom);
-  return { name, address, relation: relationLabel(person), style, casual, gender, mbti, preference };
+  return { name, address, relation: relationLabel(person), style, styleCustom, casual, gender, mbti, preference };
 }
 
 export function userPrompt(profile) {
@@ -290,7 +291,9 @@ function readPending(raw) {
   return {
     step: ['profile', 'characters', 'account'].includes(raw.step) ? raw.step : 'profile',
     profile: cleanProfile(raw.profile),
-    characters: CHARACTER_IDS.map((id, index) => raw.characters?.[index] ? { ...base.characters[index], ...raw.characters[index], id } : base.characters[index]),
+    characters: CHARACTER_IDS.map((id, index) => raw.characters?.[index]
+      ? cleanCharacter({ ...base.characters[index], ...raw.characters[index] }, id)
+      : base.characters[index]),
     done: CHARACTER_IDS.map((_, i) => raw.done?.[i] === true),
     index: raw.index === 1 ? 1 : 0,
   };
@@ -301,10 +304,19 @@ function readUser(raw) {
   const characters = CHARACTER_IDS.map((id, index) => cleanCharacter(raw.characters?.[index] ?? DEFAULT_CHARACTERS[index], id));
   const done = Array.isArray(raw.onboarding?.done) ? CHARACTER_IDS.map((_, i) => raw.onboarding.done[i] === true) : [false, false];
   const step = raw.onboarding?.step === 'done' && done.every(Boolean) ? 'done' : 'characters';
-  const threads = Object.fromEntries(CHARACTER_IDS.map(id => [id, Array.isArray(raw.threads?.[id]) ? raw.threads[id].filter(validMessage) : []]));
+  const originalThreads = Object.fromEntries(CHARACTER_IDS.map(id => [id,
+    Array.isArray(raw.threads?.[id]) ? raw.threads[id].filter(validMessage) : []]));
+  const threads = Object.fromEntries(CHARACTER_IDS.map(id => [id,
+    originalThreads[id].filter(message => message.source !== 'diary')]));
   const readThrough = Object.fromEntries(CHARACTER_IDS.map(id => {
     const seen = raw.readThrough?.[id];
-    return [id, seen === '' || threads[id].some(message => message.id === seen) ? seen : threads[id].at(-1)?.id ?? ''];
+    if (seen === '' || threads[id].some(message => message.id === seen)) return [id, seen];
+    const seenIndex = originalThreads[id].findIndex(message => message.id === seen);
+    if (seenIndex >= 0) {
+      const previous = originalThreads[id].slice(0, seenIndex).filter(message => message.source !== 'diary').at(-1);
+      return [id, previous?.id ?? ''];
+    }
+    return [id, threads[id].at(-1)?.id ?? ''];
   }));
   const affinity = Object.fromEntries(CHARACTER_IDS.map(id => [id, clampAffinity(raw.affinity?.[id])]));
   // A diary left in "pending" means the app closed while the AI was writing; offer a retry instead.
@@ -362,8 +374,9 @@ export function welcomeMessage(person, now = new Date()) {
     '다정하게': person.casual ? '반가워! 오늘 하루는 어땠어? 작은 일도 들려줘.' : '반가워요! 오늘 하루는 어땠어요? 작은 일도 들려주세요.',
     '차분하게': person.casual ? '반가워. 오늘 마음에 남은 일이 있으면 천천히 들려줘.' : '반가워요. 오늘 마음에 남은 일이 있으면 천천히 들려주세요.',
     '재미있게': person.casual ? '드디어 만났다! 오늘의 소소한 뉴스 있어? 귀 쫑긋하고 있어.' : '드디어 만났네요! 오늘의 소소한 뉴스 있어요? 귀 기울이고 있어요.',
+    '기타': person.casual ? '반가워! 오늘 하루는 어땠어? 편한 방식으로 들려줘.' : '반가워요! 오늘 하루는 어땠어요? 편한 방식으로 들려주세요.',
   };
-  return newMessage('assistant', address + lines[person.style], 'welcome', now);
+  return newMessage('assistant', address + (lines[person.style] ?? lines['다정하게']), 'welcome', now);
 }
 
 export function unreadCount(thread, readThrough) {
@@ -495,9 +508,25 @@ export function deleteDiary(user, date) {
 }
 
 function removeDiaryMessages(user, date) {
-  const threads = Object.fromEntries(Object.entries(user.threads).map(([id, thread]) =>
-    [id, thread.filter(message => !(message.source === 'diary' && message.diaryDate === date))]));
-  return { ...user, threads };
+  const threads = {};
+  const readThrough = { ...(user.readThrough ?? {}) };
+  for (const [id, thread] of Object.entries(user.threads)) {
+    threads[id] = thread.filter(message => !(message.source === 'diary' && message.diaryDate === date));
+    const marker = readThrough[id] ?? '';
+    if (marker && !threads[id].some(message => message.id === marker)) {
+      const markerIndex = thread.findIndex(message => message.id === marker);
+      if (markerIndex >= 0) {
+        let previous = '';
+        for (const message of thread.slice(0, markerIndex)) {
+          if (!(message.source === 'diary' && message.diaryDate === date)) previous = message.id;
+        }
+        readThrough[id] = previous;
+      } else {
+        readThrough[id] = threads[id].at(-1)?.id ?? '';
+      }
+    }
+  }
+  return { ...user, threads, readThrough };
 }
 
 /** result: { comment, reactions: [first, second], source } */
@@ -508,18 +537,7 @@ export function applyDiaryResult(user, date, result, now = new Date()) {
   const updated = failed
     ? { ...diary, status: 'failed' }
     : { ...diary, status: result.source === 'safety' ? 'safety' : 'done', comment: result.comment, reactions: result.reactions };
-  let next = { ...user, diaries: user.diaries.map(item => item.date === date ? updated : item) };
-  if (!failed) {
-    next = removeDiaryMessages(next, date);
-    const threads = { ...next.threads };
-    CHARACTER_IDS.forEach((id, index) => {
-      threads[id] = [...threads[id], newMessage('assistant', result.reactions[index], 'diary', now, {
-        diaryDate: date, emoji: diary.emoji, ...(result.source === 'safety' ? { safety: true } : {}),
-      })];
-    });
-    next = { ...next, threads };
-  }
-  return next;
+  return removeDiaryMessages({ ...user, diaries: user.diaries.map(item => item.date === date ? updated : item) }, date);
 }
 
 function safetyResult(characters) {
@@ -546,7 +564,7 @@ function letterDiary(user, date) {
   return diary && !diary.deleted && diary.kind !== 'safety' && diary.status !== 'safety' ? diary : null;
 }
 
-/** 그 캐릭터와 그날 나눈 대화. 내가 보낸 말이 없거나 위험 신호가 있던 날은 빈 목록. */
+/** 그 상대방과 그날 나눈 대화. 내가 보낸 말이 없거나 위험 신호가 있던 날은 빈 목록. */
 function dayChat(user, id, date) {
   const chat = (user.threads[id] ?? []).filter(message => localDate(new Date(message.createdAt)) === date && isTalk(message));
   const mine = chat.filter(message => message.role === 'user');
@@ -584,7 +602,7 @@ export function signalCandidates(user, now = new Date(), force = false) {
 }
 
 /** What the AI gets to write a signal: the diary first, and that character's chat on the same day.
- *  일기가 없으면 그날 대화한 캐릭터 중 한 명이 대화 내용으로 쓴다. */
+ *  일기가 없으면 그날 대화한 상대방 중 한 명이 대화 내용으로 쓴다. */
 export function prepareSignal(user, date, random = Math.random) {
   const source = letterSource(user, date);
   if (!source) return null;
@@ -697,6 +715,7 @@ export function greetingFor(now = new Date()) {
 export function statusLine(person, now = new Date()) {
   const hour = now.getHours();
   const slot = hour < 5 ? 3 : hour < 11 ? 0 : hour < 17 ? 1 : hour < 22 ? 2 : 3;
+  if (person.style === '기타') return person.casual ? '네가 편한 방식으로 이야기할게.' : '편하신 방식으로 이야기할게요.';
   const lines = {
     '다정하게': [['아침 햇살 좋다. 오늘도 천천히 가자.', '아침 햇살이 좋네요. 오늘도 천천히 가요.'], ['점심은 챙겨 먹었어?', '점심은 챙겨 드셨어요?'],
       ['오늘 하루 어땠는지 궁금해.', '오늘 하루 어땠는지 궁금해요.'], ['오늘 이야기, 편지에 담는 중.', '오늘 이야기를 편지에 담는 중이에요.']],
@@ -712,11 +731,12 @@ export function statusLine(person, now = new Date()) {
 export function sampleLines(person) {
   const greeting = welcomeMessage({ ...person, address: person.address || '' }).text;
   const cheer = {
-    '다정하게': person.casual ? '오늘 일기 읽었어. 그 작은 수고, 내가 다 알아봤어.' : '오늘 일기 읽었어요. 그 작은 수고, 제가 다 알아봤어요.',
+    '다정하게': person.casual ? '오늘 마음을 들려줘서 고마워.' : '오늘 마음을 들려주셔서 고마워요.',
     '차분하게': person.casual ? '오늘 적은 장면을 천천히 다시 읽어 봤어. 잘 지나왔네.' : '오늘 적은 장면을 천천히 다시 읽어 봤어요. 잘 지나오셨네요.',
     '재미있게': person.casual ? '속보! 오늘의 주인공이 또 해냈다고 합니다 ✨' : '속보예요! 오늘의 주인공이 또 해냈대요 ✨',
+    '기타': person.casual ? '네가 편한 방식으로 계속 이야기할게.' : '편한 방식으로 계속 이야기할게요.',
   };
-  return [greeting, cheer[person.style]];
+  return [greeting, cheer[person.style] ?? cheer['다정하게']];
 }
 
 // ---------- 공통 ----------
