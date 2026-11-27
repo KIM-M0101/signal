@@ -101,7 +101,7 @@ function HeartBurst({ color }) {
 const icons = {
   chat: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-3.5-.7L3 21l1.7-5.7a9 9 0 0 1-.7-3.8 8.5 8.5 0 0 1 17 0Z',
   book: 'M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Zm0 13a3 3 0 0 1 3-3h11M9 8h6',
-  gear: 'M4 7h16M4 17h16M9 4v6m6 4v6',
+  gear: 'M4 6h16M4 12h16M4 18h16',
   moon: 'M20 15a8 8 0 1 1-11-11 8 8 0 0 0 11 11ZM17 2v6m-3-3h6',
   arrow: 'M4 12h16m-6-6 6 6-6 6',
   up: 'M12 20V4m-6 6 6-6 6 6',
@@ -119,7 +119,7 @@ const shortDate = new Intl.DateTimeFormat('ko-KR', { month: 'numeric', day: 'num
 const destinations = [['house', '채팅', 'chat'], ['diaries', '일기', 'book'], ['signals', '시그널', 'mail'], ['settings', '설정', 'gear']];
 const native = Platform.OS !== 'web';
 const tone = id => CHARACTER_COLORS[id] ?? CHARACTER_COLORS.first;
-const voice = person => `${person.style} · ${person.casual ? '반말' : '존댓말'}`;
+const voice = person => `${person.style === '기타' ? person.styleCustom || '기타' : person.style} · ${person.casual ? '반말' : '존댓말'}`;
 
 function Icon({ name, color = C.accent, size = 20, weight = 1.8 }) {
   return <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
@@ -288,7 +288,7 @@ export function Intro({ hasPending, onStart, onResume, onLogin, onPrivacy, notic
     <View style={s.introArt}><Orbit /></View>
     <Brand />
     <Text accessibilityRole="header" style={s.introTitle}>하루시그널</Text>
-    <Text style={s.body}>하루의 이야기를 남기면, 캐릭터가 보내는 시그널을 만나요.</Text>
+    <Text style={s.body}>하루의 이야기를 남기면, 상대방이 보내는 시그널을 만나요.</Text>
     {hasPending ? <Action icon="arrow" onPress={onResume}>이어서 설정하기</Action> : null}
     <Action icon={hasPending ? undefined : 'arrow'} kind={hasPending ? 'soft' : 'primary'} onPress={onStart}>
       {hasPending ? '처음부터 시작하기' : '바로 시작하기'}</Action>
@@ -323,15 +323,15 @@ export function ProfileForm({ value, onChange, onNext, onBack, errors = {}, busy
   return <View style={s.page}>
     <Header title="내 프로필" onBack={onBack} />
     <View style={s.content}>
-      {!editing ? <><Steps current={1} /><Text style={s.display}>먼저, 나를{'\n'}알려 주세요</Text></> : null}
-      <Text style={s.note}>캐릭터가 대화에서 참고할 정보예요. 이름만 꼭 적고, 나머지는 건너뛰어도 돼요.</Text>
+      {!editing ? <><Steps current={1} /><Text style={s.display}>먼저, 나를 알려주세요.</Text></> : null}
+      <Text style={s.note}>상대방이 대화에서 참고할 정보예요. 이름만 꼭 적고, 나머지는 건너뛰어도 돼요.</Text>
       {editing && guest ? <View style={s.cardSection}>
         <Text style={s.label}>로그인 계정이 아직 없어요</Text>
         <Text style={s.note}>계정을 만들면 로그아웃한 뒤에도 이 아이디로 다시 들어올 수 있어요. 지금까지의 기록은 그대로 이어져요.</Text>
         <Action small kind="soft" onPress={onRegister} disabled={busy}>로그인 계정 만들기</Action>
       </View> : null}
       <Field inputRef={nameRef} label="이름(닉네임)" required value={value.nickname} onChangeText={nickname => onChange({ nickname })}
-        limit={16} error={errors.nickname} placeholder="캐릭터가 부를 이름" />
+        limit={16} error={errors.nickname} placeholder="상대방이 부를 이름" />
       <Field label="좋아하는 것" value={value.likes} onChangeText={likes => onChange({ likes })} limit={MAX_NOTE}
         placeholder="예: 고양이, 산책, 잔잔한 음악" multiline />
       <Field label="싫어하는 것" value={value.dislikes} onChangeText={dislikes => onChange({ dislikes })} limit={MAX_NOTE}
@@ -339,8 +339,6 @@ export function ProfileForm({ value, onChange, onNext, onBack, errors = {}, busy
       <Field label="MBTI" value={value.mbti} onChangeText={mbti => onChange({ mbti })} limit={12} placeholder="자유롭게 적어 주세요" />
       <ChoiceGroup label="성별">
         <Chips options={USER_GENDERS} value={value.gender} onChange={gender => onChange({ gender })} disabled={busy} />
-        {value.gender === '직접 입력' ? <TextBox accessibilityLabel="성별 직접 입력" value={value.genderCustom} maxLength={16}
-          onChangeText={genderCustom => onChange({ genderCustom })} style={s.input} placeholder="직접 입력" placeholderTextColor="#A39BB2" /> : null}
       </ChoiceGroup>
       {error ? <Notice danger>{error}</Notice> : null}
       <View style={s.formRow}>
@@ -351,7 +349,7 @@ export function ProfileForm({ value, onChange, onNext, onBack, errors = {}, busy
   </View>;
 }
 
-// 4. 캐릭터 프로필
+// 4. 상대방 프로필
 export function CharacterSetup({
   draft, index, done, onChoose, onChange, onPickPhoto, onComplete, onFinish, onBack, editing, onboarding, busy, errors = {}, error, finishLabel,
 }) {
@@ -363,11 +361,11 @@ export function CharacterSetup({
   const lines = sampleLines(person);
   useEffect(() => { setAvatarsOpen(false); }, [index]);
   return <View style={s.page}>
-    <Header title="캐릭터 프로필" onBack={onBack} />
+    <Header title="상대방 프로필" onBack={onBack} />
     <View style={s.content}>
-      {onboarding ? <><Steps current={2} /><Text style={s.display}>대화할 두 캐릭터를{'\n'}만들어요</Text></> : null}
+      {onboarding ? <><Steps current={2} /><Text style={s.display}>대화할 상대방을 알려주세요.</Text></> : null}
       {!editing ? <Segment value={index} disabled={busy} onChange={onChoose}
-        options={draft.map((item, i) => [i, `${item.name || `캐릭터 ${i + 1}`}${done[i] ? ' ✓' : ''}`, tone(item.id).main])} /> : null}
+        options={draft.map((item, i) => [i, `${item.name || `상대방 ${i + 1}`}${done[i] ? ' ✓' : ''}`, tone(item.id).main])} /> : null}
       <View style={s.photoRow}>
         <Avatar person={person} size={72} ring={color.main} />
         <View style={[s.flex, { gap: 8 }]}>
@@ -398,13 +396,16 @@ export function CharacterSetup({
       </ChoiceGroup>
       <ChoiceGroup label="대화 방식" required>
         <Chips options={STYLES} value={person.style} onChange={style => onChange({ style })} disabled={busy} />
+        {person.style === '기타' ? <Field label="원하는 대화 방식" required value={person.styleCustom}
+          onChangeText={styleCustom => onChange({ styleCustom })} limit={MAX_NOTE} multiline error={errors.styleCustom}
+          placeholder="예: 짧고 차분하게 이야기해 주세요" /> : null}
       </ChoiceGroup>
       <ChoiceGroup label="반말 모드" required>
         <Segment value={person.casual} disabled={busy} onChange={casual => onChange({ casual })} options={[[true, '켜기'], [false, '끄기']]} />
       </ChoiceGroup>
 
       <View style={[s.preview, { backgroundColor: color.soft, borderColor: color.border }]} accessibilityLabel="말투 미리보기">
-        <Text style={[s.previewTitle, { color: color.main }]}>이 캐릭터는 이렇게 말해요</Text>
+        <Text style={[s.previewTitle, { color: color.main }]}>이 상대방은 이렇게 말해요</Text>
         {lines.map(line => <View key={line} style={s.reaction}>
           <Avatar person={person} size={28} />
           <View style={[s.bubble, { backgroundColor: C.paper, borderColor: color.border, maxWidth: '86%' }]}><Text style={s.messageText}>{line}</Text></View>
@@ -418,8 +419,6 @@ export function CharacterSetup({
       {moreOpen ? <>
         <ChoiceGroup label="성별">
           <Chips options={CHARACTER_GENDERS} value={person.gender} onChange={gender => onChange({ gender })} disabled={busy} />
-          {person.gender === '직접 입력' ? <TextBox accessibilityLabel="캐릭터 성별 직접 입력" value={person.genderCustom} maxLength={16}
-            onChangeText={genderCustom => onChange({ genderCustom })} style={s.input} placeholder="직접 입력" placeholderTextColor="#A39BB2" /> : null}
         </ChoiceGroup>
         <Field label="MBTI" value={person.mbti} onChangeText={mbti => onChange({ mbti })} limit={12} placeholder="자유롭게 적어 주세요" />
         <Field label="나에게 맞춰줬으면 하는 점" value={person.preference} onChangeText={preference => onChange({ preference })}
@@ -429,9 +428,9 @@ export function CharacterSetup({
       {error ? <Notice danger>{error}</Notice> : null}
       {editing ? <Action onPress={onComplete} disabled={busy}>저장</Action> : <>
         <Action kind={bothDone ? 'soft' : 'primary'} color={bothDone ? color.main : undefined} onPress={onComplete} disabled={busy}>
-          {`캐릭터 ${index + 1} 프로필 완료`}</Action>
+          {`상대방 ${index + 1} 프로필 완료`}</Action>
         <Action kind={bothDone ? 'primary' : 'soft'} disabled={!bothDone || busy} onPress={onFinish} icon={bothDone ? 'arrow' : undefined}>
-          {bothDone ? finishLabel : '두 캐릭터를 완료하면 다음으로 갈 수 있어요'}</Action>
+          {bothDone ? finishLabel : '두 상대방 설정을 완료하면 다음으로 갈 수 있어요'}</Action>
       </>}
     </View>
   </View>;
@@ -445,11 +444,11 @@ export function AccountForm({ characters, onSubmit, onGuest, onBack, errors = {}
   return <View style={s.page}>
     <Header title={register ? '로그인 계정 만들기' : '계정 만들기'} onBack={onBack} />
     <View style={s.content}>
-      {register ? <Text style={s.display}>로그인 계정을{'\n'}만들어요</Text>
-        : <><Steps current={3} /><Text style={s.display}>내 캐릭터를{'\n'}저장할게요</Text></>}
+      {register ? <Text style={s.display}>로그인 계정을 만들어요.</Text>
+        : <><Steps current={3} /><Text style={s.display}>상대방 프로필을 저장할게요.</Text></>}
       <View style={[s.card, s.row]}>
         <View style={s.row}>{characters.map(person => <Avatar key={person.id} person={person} size={44} ring={tone(person.id).main} />)}</View>
-        <Text style={[s.body, s.flex]}>{register ? '지금까지의 프로필, 캐릭터, 일기와 시그널은 그대로 이어져요.'
+        <Text style={[s.body, s.flex]}>{register ? '지금까지의 프로필, 상대방 프로필, 일기와 시그널은 그대로 이어져요.'
           : `${josa(characters[0].name, '과', '와')} ${josa(characters[1].name, '이', '가')} 채팅방에서 기다리고 있어요.`}</Text>
       </View>
       <Notice>계정은 이 기기(브라우저)에만 저장돼요. 계정을 만들어 두면 로그아웃해도 이 아이디로 다시 들어올 수 있어요.</Notice>
@@ -476,7 +475,7 @@ export function Home({
   return <View style={s.page}>
     <View style={[s.hero, { backgroundColor: background.page }, night && s.heroNight]}>
       <View style={s.rowBetween}><Brand night={night} />
-        <Pressable accessibilityRole="button" accessibilityLabel="프로필·캐릭터 설정" onPress={onSettings} style={s.iconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="프로필·상대방 설정" onPress={onSettings} style={s.iconButton}>
           <Icon name="gear" color={night ? C.nightText : C.ink} /></Pressable>
       </View>
       <Text style={[s.note, night && s.nightMuted]}>{profile.nickname}님, {greetingFor(now)}</Text>
@@ -484,10 +483,10 @@ export function Home({
     </View>
     <TodayCard today={today} diary={todayDiary} signal={todaySignal} now={now} night={night}
       onDiary={onDiary} onSignals={onSignals} onOpenSignal={onOpenSignal} />
-    <Text style={s.sectionTitle}>캐릭터</Text>
+    <Text style={s.sectionTitle}>상대방</Text>
     <View style={s.rooms}>
       {characters.map(person => {
-        const messages = threads[person.id] ?? [];
+        const messages = (threads[person.id] ?? []).filter(message => message.source !== 'diary');
         const last = messages.at(-1);
         const unread = unreadCount(messages, readThrough[person.id]);
         const color = tone(person.id);
@@ -502,7 +501,7 @@ export function Home({
                 {unread > 0 ? <Text style={[s.badge, { backgroundColor: color.main }]}>{unread > 99 ? '99+' : unread}</Text>
                   : last ? <Text style={s.timestamp}>{localDate(new Date(last.createdAt)) === today ? time.format(new Date(last.createdAt)) : shortDate.format(new Date(last.createdAt))}</Text> : null}
               </View>
-              <Text numberOfLines={1} style={s.note}>{last ? (last.role === 'user' ? '나 · ' : last.source === 'diary' ? '일기 반응 · ' : '') + last.text : '아직 나눈 대화가 없어요.'}</Text>
+              <Text numberOfLines={1} style={s.note}>{last ? (last.role === 'user' ? '나 · ' : '') + last.text : '아직 나눈 대화가 없어요.'}</Text>
             </View>
           </View>
           <HeartMeter value={affinity[person.id] ?? 0} id={person.id} compact />
@@ -548,7 +547,7 @@ function TodayCard({ today, diary, signal, now, night, onDiary, onSignals, onOpe
     body = <>
       <View style={s.row}><Text style={s.todayEmoji}>📔</Text>
         <View style={s.flex}><Text style={[s.title, ink]}>오늘 하루는 어땠나요?</Text>
-          <Text style={[s.note, muted]}>일기나 대화를 남기면 밤 10시에 두 캐릭터 중 한 명이 시그널을 보내요.</Text></View></View>
+          <Text style={[s.note, muted]}>일기나 대화를 남기면 밤 10시에 두 상대방 중 한 명이 시그널을 보내요.</Text></View></View>
       <Action icon="pen" onPress={onDiary}>오늘의 일기 쓰기</Action>
     </>;
   }
@@ -561,13 +560,14 @@ function TodayCard({ today, diary, signal, now, night, onDiary, onSignals, onOpe
 // 5-1. 1:1 채팅방
 export function Chat({
   person, affinity, messages, value, onChange, onSend, onBack, onEdit, pending, error, connection, usage, onBazeNotice,
-  unreadSignals, onDiary, onSignals, onOpenDiary,
+  unreadSignals, onDiary, onSignals,
 }) {
   const list = useRef(null);
   const nearEnd = useRef(true);
   const [focused, setFocused] = useState(false);
   const color = tone(person.id);
-  const last = messages.filter(message => !['diary', 'stage'].includes(message.source)).at(-1);
+  const visibleMessages = messages.filter(message => message.source !== 'diary');
+  const last = visibleMessages.filter(message => message.source !== 'stage').at(-1);
   const unanswered = last?.role === 'user';
   const scrollToEnd = () => { if (nearEnd.current) list.current?.scrollToEnd({ animated: false }); };
   useEffect(scrollToEnd, [pending]);
@@ -600,15 +600,14 @@ export function Chat({
       onLayout={scrollToEnd} onScroll={({ nativeEvent: { contentSize, layoutMeasurement, contentOffset } }) => {
         nearEnd.current = contentSize.height - layoutMeasurement.height - contentOffset.y < 100;
       }} scrollEventThrottle={32} keyboardShouldPersistTaps="handled">
-      {messages.length === 0 ? <Text style={s.emptyMessage}>오늘 해낸 일이나 마음에 남은 이야기를 들려줘요.</Text> : null}
-      {messages.map((message, index) => {
+      {visibleMessages.length === 0 ? <Text style={s.emptyMessage}>오늘 해낸 일이나 마음에 남은 이야기를 들려줘요.</Text> : null}
+      {visibleMessages.map((message, index) => {
         const date = new Date(message.createdAt);
         const day = localDate(date);
-        const previous = messages[index - 1];
+        const previous = visibleMessages[index - 1];
         const newDay = !previous || day !== localDate(new Date(previous.createdAt));
         const mine = message.role === 'user';
         const safety = message.source === 'safety' || message.safety;
-        const diary = message.source === 'diary';
         if (message.source === 'stage') {
           return <React.Fragment key={message.id}>
             {newDay ? <Text style={s.dateChip}>{dateLabel(day)}</Text> : null}
@@ -624,13 +623,10 @@ export function Chat({
             {!mine ? <Avatar person={person} size={32} /> : null}
             {mine ? <Text style={s.timestamp}>{time.format(date)}</Text> : null}
             <View style={s.messageColumn}>
-              <Pressable disabled={!diary} accessibilityRole={diary ? 'button' : undefined} onPress={() => onOpenDiary(message.diaryDate)}
-                style={[s.bubble, { backgroundColor: color.soft, borderColor: color.border }, mine && s.mineBubble, safety && s.safetyBubble,
-                  diary && { backgroundColor: C.paper, borderColor: color.main }]}>
-                {diary ? <Text style={[s.diaryTag, { color: color.main }]}>{message.emoji} 오늘의 일기에 남긴 응원</Text> : null}
+              <View style={[s.bubble, { backgroundColor: color.soft, borderColor: color.border }, mine && s.mineBubble, safety && s.safetyBubble]}>
                 {safety ? <Text style={s.label}>안전 안내</Text> : null}
                 <Text style={[s.messageText, mine && s.mineText]}>{message.text}</Text>
-              </Pressable>
+              </View>
             </View>
             {!mine ? <Text style={s.timestamp}>{time.format(date)}</Text> : null}
           </View>
@@ -700,7 +696,7 @@ export function DiaryWrite({ date, value, onChange, onSubmit, onBack, errors = {
   </View>;
 }
 
-// 7. 일기 결과: 오늘의 한마디가 먼저, 캐릭터 응원은 채팅처럼 한 명씩 도착한다.
+// 7. 일기 결과: 오늘의 한마디와 상대방별 응원을 일기 화면에서 보여준다.
 export function DiaryResult({ diary, characters, generating, fresh, isToday, onChat, onEdit, onDelete, onRetry, onBack, error }) {
   const ready = ['done', 'safety'].includes(diary.status);
   const [shown, setShown] = useState(fresh ? 0 : 3);
@@ -780,7 +776,7 @@ export function Diaries({ diaries, today, onOpen, onWrite }) {
     <View style={s.content}>
       <View style={s.card}>
         <Text style={s.sectionDate}>{dateLabel(today)}</Text>
-        <Text style={s.body}>{todayDiary ? (todayDiary.deleted ? '오늘 일기는 삭제했어요. 내일 다시 남길 수 있어요.' : '오늘 일기를 남겼어요. 오늘 안에는 수정할 수 있어요.') : '오늘의 일기를 남기면 밤 10시에 일기를 읽은 캐릭터가 시그널을 보내요. 일기를 쓰지 않은 날은 그날 대화로 써요.'}</Text>
+        <Text style={s.body}>{todayDiary ? (todayDiary.deleted ? '오늘 일기는 삭제했어요. 내일 다시 남길 수 있어요.' : '오늘 일기를 남겼어요. 오늘 안에는 수정할 수 있어요.') : '오늘의 일기를 남기면 밤 10시에 일기를 읽은 상대방이 시그널을 보내요. 일기를 쓰지 않은 날은 그날 대화로 써요.'}</Text>
         {!todayDiary ? <Action icon="pen" onPress={onWrite}>오늘의 일기 쓰기</Action>
           : !todayDiary.deleted ? <Action kind="soft" onPress={() => onOpen(today)}>오늘 남긴 일기 보기</Action> : null}
       </View>
@@ -805,7 +801,7 @@ export function SignalArchive({ signals, characters, onOpen, onChat, canTest, on
       {waitingFor ? <View style={s.nightCardBox}>
         <Text style={s.nightTime}>오늘 밤 10:00 도착 예정</Text>
         <Text style={[s.countdown, { color: C.nightText }]}>{waitingFor} 남았어요</Text>
-        <Text style={[s.note, s.nightMuted]}>오늘 남긴 일기를 먼저 읽고, 일기가 없으면 오늘 나눈 대화를 바탕으로 캐릭터 한 명이 하루 마무리 편지를 보내요.</Text>
+        <Text style={[s.note, s.nightMuted]}>오늘 남긴 일기를 먼저 읽고, 일기가 없으면 오늘 나눈 대화를 바탕으로 상대방 한 명이 하루 마무리 편지를 보내요.</Text>
       </View> : null}
       {canTest ? <Action icon="moon" kind="nightSoft" disabled={testing} onPress={onTest}>{testing ? '시그널을 쓰는 중이에요…' : '밤 10시 도착 테스트 (시연용)'}</Action> : null}
       {error ? <Notice danger>{error}</Notice> : null}
@@ -820,7 +816,7 @@ export function SignalArchive({ signals, characters, onOpen, onChat, canTest, on
           onPress={() => onOpen(signal.id)} style={({ pressed }) => [s.signalRow, !signal.read && s.signalNew, pressed && s.pressed]}>
           {sender ? <Avatar person={sender} size={44} ring={tone(sender.id).main} /> : <Text style={{ fontSize: 30 }}>{signal.read ? '✉️' : '💌'}</Text>}
           <View style={[s.flex, { gap: 3 }]}>
-            <Text style={[s.label, s.nightText]} numberOfLines={1}>{signal.guessId ? `${josa(sender?.name ?? '캐릭터', '이', '가')} 보낸 시그널` : '누군가 보낸 시그널'}</Text>
+            <Text style={[s.label, s.nightText]} numberOfLines={1}>{signal.guessId ? `${josa(sender?.name ?? '상대방', '이', '가')} 보낸 시그널` : '누군가 보낸 시그널'}</Text>
             <Text style={[s.note, s.nightMuted]} numberOfLines={1}>{signal.read ? signalPreview(signal.message) : '아직 열지 않은 편지예요'}</Text>
             <Text style={[s.timestamp, s.nightMuted]}>{dateLabel(signal.date)} · {time.format(new Date(signal.arrivedAt))} 도착</Text>
           </View>
@@ -858,7 +854,7 @@ export function SignalDetail({ signal, characters, onOpenEnvelope, onGuess, onRe
     <View style={s.content}>
       <View style={{ alignItems: 'center', gap: 4 }}>
         <Text style={s.nightTime}>{dateLabel(signal.date)} · {time.format(new Date(signal.arrivedAt))}</Text>
-        <Text style={[s.title, s.nightText]}>{signal.guessId ? `보낸 사람 · ${sender?.name ?? '캐릭터'}` : '보낸 사람은 아직 비밀이에요'}</Text>
+        <Text style={[s.title, s.nightText]}>{signal.guessId ? `보낸 사람 · ${sender?.name ?? '상대방'}` : '보낸 사람은 아직 비밀이에요'}</Text>
       </View>
       {!opened ? <Pressable accessibilityRole="button" accessibilityLabel="봉투 열기" onPress={open} style={({ pressed }) => [s.envelope, pressed && s.pressed]}>
         <Svg style={s.envelopeArt} viewBox="0 0 150 104"><Envelope /></Svg>
@@ -870,7 +866,7 @@ export function SignalDetail({ signal, characters, onOpenEnvelope, onGuess, onRe
         <Text style={s.letterSign}>— {signal.guessId ? sender?.name : '???'} 보냄</Text>
       </Animated.View>}
       {opened ? (signal.guessId ? <>
-        <Text style={[s.note, s.nightMuted, { textAlign: 'center' }]}>내가 고른 캐릭터 · {picked?.name ?? '-'}</Text>
+        <Text style={[s.note, s.nightMuted, { textAlign: 'center' }]}>내가 고른 상대방 · {picked?.name ?? '-'}</Text>
         <Action onPress={onResult}>추측 결과 다시 보기</Action>
       </> : <Action icon="arrow" onPress={onGuess}>누가 보냈을까요?</Action>) : null}
       <Action kind="nightSoft" onPress={onBack}>보관함으로</Action>
@@ -925,7 +921,7 @@ export function GuessResult({ signal, characters, affinity = {}, onArchive, onCh
     <View style={s.content}>
       <Animated.View style={[s.result, { transform: [{ scale: pop }] }]}>
         <Text style={s.resultEmoji}>{correct ? '💖' : '💌'}</Text>
-        <Text accessibilityRole="header" style={s.bigQuestion}>{correct ? '맞혔어요!' : '이번엔 다른 캐릭터였어요.'}</Text>
+        <Text accessibilityRole="header" style={s.bigQuestion}>{correct ? '맞혔어요!' : '이번엔 다른 상대방이었어요.'}</Text>
         <View>
           <Avatar person={sender} size={84} ring={color.main} />
           {fresh ? <HeartBurst color={color.main} /> : null}
@@ -981,7 +977,7 @@ export function Settings({ profile, characters, affinity, guest, background, onB
       <Text style={s.sectionDate}>내 프로필</Text>
       <SettingsRow onPress={onEditProfile} detail={guest ? '로그인 계정 없음 · 이 기기에서만 사용 중' : `아이디 ${profile.loginId}`}>{profile.nickname} 프로필 수정</SettingsRow>
       {guest ? <SettingsRow onPress={onRegister} detail="만들어 두면 로그아웃해도 다시 들어올 수 있어요. 기록은 그대로 이어져요.">로그인 계정 만들기</SettingsRow> : null}
-      <Text style={s.sectionDate}>캐릭터 프로필</Text>
+      <Text style={s.sectionDate}>상대방 프로필</Text>
       {characters.map((person, index) => <View key={person.id} style={[s.characterRow, { flexDirection: 'column', alignItems: 'stretch' }]}>
         <View style={s.row}>
           <Avatar person={person} size={44} ring={tone(person.id).main} />
@@ -1005,14 +1001,14 @@ export function Settings({ profile, characters, affinity, guest, background, onB
 
 export function Privacy({ onBack, provider }) {
   const rows = [
-    ['수집하는 정보', '로그인 아이디와 비밀번호(해시로 저장), 내 프로필(이름, 좋아하는 것, 싫어하는 것, MBTI, 성별), 캐릭터 프로필과 사진, 일기와 감정 이모지, 채팅과 시그널.'],
-    ['수집 목적', '캐릭터가 나에게 맞춘 말투로 대화하고, 일기에 응원을 남기고, 밤 10시 시그널을 쓰기 위해서예요. 호감도는 캐릭터와의 관계를 보여줄 뿐 내려가지 않고, 사용자를 점수화하거나 다른 사람과 비교하지 않아요.'],
+    ['수집하는 정보', '로그인 아이디와 비밀번호(해시로 저장), 내 프로필(이름, 좋아하는 것, 싫어하는 것, MBTI, 성별), 상대방 프로필과 사진, 일기와 감정 이모지, 채팅과 시그널.'],
+    ['수집 목적', '상대방이 나에게 맞춘 말투로 대화하고, 일기에 응원을 남기고, 밤 10시 시그널을 쓰기 위해서예요. 호감도는 상대방과의 관계를 보여줄 뿐 내려가지 않고, 사용자를 점수화하거나 다른 사람과 비교하지 않아요.'],
     ['저장 위치와 보관 기간', '모든 정보는 이 기기(또는 브라우저)에만 저장돼요. 직접 삭제하거나 앱 데이터를 지울 때까지 보관해요.'],
     ['AI로 보내는 정보', provider === 'baze'
-      ? '베이즈 테스트 모드에서는 동의 후 내 프로필의 텍스트, 캐릭터의 텍스트 설정, 일기 또는 같은 방의 최근 대화를 베이즈로 보내요. 사진과 비밀번호는 보내지 않아요.'
-      : '답장·일기 응원·시그널을 만들 때 내 프로필의 텍스트, 캐릭터의 텍스트 설정, 일기 또는 같은 방의 최근 대화를 개발 PC의 로컬 AI로 보내요. 사진과 비밀번호는 보내지 않아요.'],
+      ? '베이즈 테스트 모드에서는 동의 후 내 프로필의 텍스트, 상대방의 텍스트 설정, 일기 또는 같은 방의 최근 대화를 베이즈로 보내요. 사진과 비밀번호는 보내지 않아요.'
+      : '답장·일기 응원·시그널을 만들 때 내 프로필의 텍스트, 상대방의 텍스트 설정, 일기 또는 같은 방의 최근 대화를 개발 PC의 로컬 AI로 보내요. 사진과 비밀번호는 보내지 않아요.'],
     ['알림', '앱에서 일기나 대화를 남긴 날 밤 10시에 시그널 도착 알림을 이 기기에서 한 번 보내요. 알림 내용에는 일기 내용이 들어가지 않아요. 기기 설정에서 언제든 끌 수 있어요.'],
-    ['수정과 삭제', '설정 → 내 프로필·캐릭터 수정, 일기 화면의 ⋯ 메뉴에서 오늘 일기 수정·삭제, 설정 → 기록 삭제 / 계정·내 프로필 삭제.'],
+    ['수정과 삭제', '설정 → 내 프로필·상대방 수정, 일기 화면의 ⋯ 메뉴에서 오늘 일기 수정·삭제, 설정 → 기록 삭제 / 계정·내 프로필 삭제.'],
     ['서비스의 범위', '하루시그널은 기록과 응원을 위한 서비스이며 진단, 치료, 상담을 제공하지 않아요. 위험한 상황이면 112·119, 마음이 힘들 땐 109에 연락해 주세요.'],
   ];
   return <View style={s.page}>
@@ -1044,7 +1040,7 @@ export function BazeConsent({ visible, onCancel, onAccept }) {
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
     <View style={s.modalLayer}><View style={s.dialog} accessibilityViewIsModal>
       <Text accessibilityRole="header" style={s.title}>베이즈 AI 테스트</Text>
-      <Text style={s.body}>GPT-6 Luna가 답장할 수 있도록 현재 메시지와 같은 방의 최근 대화, 일기와 감정 이모지, 캐릭터의 텍스트 설정, 내 프로필의 텍스트(이름·좋아하는 것·싫어하는 것·MBTI·성별)를 베이즈로 보내요. 사진과 비밀번호는 기기에 보관해요.</Text>
+      <Text style={s.body}>GPT-6 Luna가 답장할 수 있도록 현재 메시지와 같은 방의 최근 대화, 일기와 감정 이모지, 상대방의 텍스트 설정, 내 프로필의 텍스트(이름·좋아하는 것·싫어하는 것·MBTI·성별)를 베이즈로 보내요. 사진과 비밀번호는 기기에 보관해요.</Text>
       <Text style={s.body}>학교 계정의 API 크레딧을 사용하는 테스트예요. 가상의 이름과 이야기만 입력해 주세요.</Text>
       <Action onPress={onAccept}>동의하고 테스트하기</Action>
       <Action kind="soft" onPress={onCancel}>닫기</Action>

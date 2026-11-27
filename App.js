@@ -171,7 +171,7 @@ function HaruSignal() {
   }
 
   // ---------- 온보딩 ----------
-  // 계정이 없을 때는 프로필·캐릭터 초안을 pending에 저장하고, 마지막 단계에서 계정을 만든다.
+  // 계정이 없을 때는 프로필·상대방 초안을 pending에 저장하고, 마지막 단계에서 계정을 만든다.
 
   const savePending = change => save(current => ({ ...current, pending: change(current.pending ?? emptyPending()) }));
 
@@ -254,7 +254,7 @@ function HaruSignal() {
     });
   }
 
-  // ---------- 캐릭터 ----------
+  // ---------- 상대방 ----------
   // source: 계정 전(pending), 로그인 후 다시 설정(user.onboarding), 설정에서 수정(characterDraft)
 
   const characterMode = route !== 'characters' ? null : params.editing ? 'edit' : user ? 'user' : 'pending';
@@ -336,7 +336,7 @@ function HaruSignal() {
 
   function finishCharacters() {
     void perform(async () => {
-      if (!characterDone.every(Boolean)) throw new Error('두 캐릭터 프로필을 모두 완료해 주세요.');
+      if (!characterDone.every(Boolean)) throw new Error('두 상대방 프로필을 모두 완료해 주세요.');
       if (characterMode === 'user') {
         await saveUser(current => finishOnboarding(current));
         go('house');
@@ -526,10 +526,10 @@ function HaruSignal() {
     setError('');
     const name = type === 'character' ? user.characters[index].name : '';
     const dialogs = {
-      diary: { title: '오늘 일기를 삭제할까요?', body: '일기와 AI 총평, 채팅방의 일기 반응, 이 일기로 받은 시그널을 지워요. 삭제한 뒤에도 오늘은 새 일기를 쓸 수 없어요.' },
-      records: { title: '기록을 삭제할까요?', body: '두 채팅방의 대화, 모든 일기, 받은 시그널을 이 기기에서 지워요. 내 프로필과 캐릭터 설정, 호감도는 남아요.' },
-      character: { title: `${name} 프로필을 삭제할까요?`, body: `${name}의 설정과 사진, 채팅, 호감도, ${josa(name, '이', '가')} 보낸 시그널을 지워요. 삭제 후에는 새 캐릭터를 설정해야 채팅방을 쓸 수 있어요.` },
-      account: { title: '계정과 내 프로필을 삭제할까요?', body: '로그인 계정, 내 프로필, 두 캐릭터, 모든 일기와 채팅, 시그널을 이 기기에서 지워요. 되돌릴 수 없어요.' },
+      diary: { title: '오늘 일기를 삭제할까요?', body: '일기와 AI 총평, 이 일기로 받은 시그널을 지워요. 삭제한 뒤에도 오늘은 새 일기를 쓸 수 없어요.' },
+      records: { title: '기록을 삭제할까요?', body: '두 채팅방의 대화, 모든 일기, 받은 시그널을 이 기기에서 지워요. 내 프로필과 상대방 설정, 호감도는 남아요.' },
+      character: { title: `${name} 프로필을 삭제할까요?`, body: `${name}의 설정과 사진, 채팅, 호감도, ${josa(name, '이', '가')} 보낸 시그널을 지워요. 삭제 후에는 새 상대방을 설정해야 채팅방을 쓸 수 있어요.` },
+      account: { title: '계정과 내 프로필을 삭제할까요?', body: '로그인 계정, 내 프로필, 두 상대방, 모든 일기와 채팅, 시그널을 이 기기에서 지워요. 되돌릴 수 없어요.' },
     };
     setDialog({ ...dialogs[type], type, index, date });
   }
@@ -624,7 +624,7 @@ function HaruSignal() {
     characters={params.register ? user.characters : data.pending?.characters ?? emptyPending().characters}
     onSubmit={submitAccount} onGuest={startAsGuest} onBack={exitAccount} errors={errors} busy={busy} error={error && !errors.loginId && !errors.password ? error : ''} />;
   else if (!user) body = <Loading>로그인 정보를 확인하고 있어요.</Loading>;
-  else if (!ready) body = <Loading>캐릭터 설정을 확인하고 있어요.</Loading>;
+  else if (!ready) body = <Loading>상대방 설정을 확인하고 있어요.</Loading>;
   else if (route === 'house') body = <Home profile={user.profile} characters={user.characters} affinity={user.affinity} threads={user.threads}
     readThrough={user.readThrough} todayDiary={todayDiary} todaySignal={todaySignal} now={now}
     onOpenRoom={id => go('chat', { id })} onDiary={() => openDiary('house')} onSignals={() => go('signals')}
@@ -673,7 +673,7 @@ function HaruSignal() {
           onEdit={() => editCharacter(user.characters.indexOf(person), 'chat')} pending={Boolean(pending[person.id])}
           error={chatErrors[person.id]} connection={connection} usage={bazeUsage[person.id]} onBazeNotice={() => setBazeNotice(true)}
           unreadSignals={unreadSignals} onDiary={() => openDiary('house')}
-          onSignals={() => go('signals')} onOpenDiary={openDiaryResult} />
+          onSignals={() => go('signals')} />
           : <ScrollView ref={scroll} key={route} style={s.flex} contentContainerStyle={s.scrollBody} keyboardShouldPersistTaps="handled">{body}</ScrollView>}
         {showTabs ? <Tabs route={tab} onNavigate={go} disabled={busy} badges={{ signals: unreadSignals }} /> : null}
       </KeyboardAvoidingView>
