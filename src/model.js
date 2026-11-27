@@ -6,7 +6,7 @@ export const AVATARS = Object.freeze([
   { id: 'ian', label: '초록 아바타', color: '#DDE7D6' },
   { id: 'roa', label: '라일락 아바타', color: '#EAE0F3' },
 ]);
-export const RELATIONS = ['동갑', '연상', '연하', '친구', '기타'];
+export const RELATIONS = ['연상', '연하', '친구', '기타'];
 export const STYLES = ['다정하게', '차분하게', '재미있게'];
 export const USER_GENDERS = ['여성', '남성', '직접 입력', '응답하지 않음'];
 export const CHARACTER_GENDERS = ['여성', '남성', '직접 입력', '설정하지 않음'];
@@ -36,6 +36,7 @@ export const MAX_REPLY = 650;
 export const CONTEXT_MESSAGES = 10;
 export const CONTEXT_CHARS = 1_800;
 export const SIGNAL_HOUR = 22;
+export const BACKGROUND_IDS = ['lavender', 'cream', 'pink', 'sky', 'mint'];
 export const AFFINITY = Object.freeze({ diary: 5, chat: 1, chatDailyMax: 5, correctGuess: 3, max: 100 });
 export const CHARACTER_IDS = ['first', 'second'];
 
@@ -45,7 +46,7 @@ export const DEFAULT_PROFILE = Object.freeze({
 
 export const DEFAULT_CHARACTERS = Object.freeze([
   {
-    id: 'first', name: '윤서', avatar: 'sol', photo: '', address: '', relation: '동갑', relationCustom: '',
+    id: 'first', name: '윤서', avatar: 'sol', photo: '', address: '', relation: '친구', relationCustom: '',
     style: '다정하게', casual: true, gender: '설정하지 않음', genderCustom: '', mbti: '', preference: '',
   },
   {
@@ -74,6 +75,7 @@ export function emptyUser(profile = DEFAULT_PROFILE) {
     readThrough: { first: '', second: '' },
     diaries: [],
     signals: [],
+    background: 'lavender',
   };
 }
 
@@ -206,7 +208,8 @@ export function profileErrors(value) {
 
 export function cleanCharacter(value, id) {
   const preset = DEFAULT_CHARACTERS.find(item => item.id === id) ?? DEFAULT_CHARACTERS[0];
-  const relation = pick(value?.relation, RELATIONS, preset.relation);
+  // '동갑'은 선택지에서 빠졌어요. 예전에 저장된 값은 '친구'로 옮겨요.
+  const relation = value?.relation === '동갑' ? '친구' : pick(value?.relation, RELATIONS, preset.relation);
   const gender = pick(value?.gender, CHARACTER_GENDERS, '설정하지 않음');
   const photo = typeof value?.photo === 'string' && value.photo.length <= MAX_PHOTO
     && /^data:image\/(?:jpeg|png);base64,[a-z0-9+/=]+$/i.test(value.photo) ? value.photo : '';
@@ -313,6 +316,7 @@ function readUser(raw) {
     ...base, characters,
     onboarding: { step, index: raw.onboarding?.index === 1 ? 1 : 0, done },
     affinity, chatGains, threads, readThrough, diaries, signals,
+    background: BACKGROUND_IDS.includes(raw.background) ? raw.background : 'lavender',
   };
 }
 
@@ -533,23 +537,68 @@ export function signalDue(date, now = new Date()) {
   return now.getTime() >= new Date(y, m - 1, d, SIGNAL_HOUR, 0, 0).getTime();
 }
 
-/** Dates whose diary is ready for a signal: arrived after 22:00, or today when forced by the demo button. */
-export function signalCandidates(user, now = new Date(), force = false) {
-  const today = localDate(now);
-  return user.diaries.filter(diary => !diary.deleted && diary.kind !== 'safety' && diary.status !== 'safety'
-    && !user.signals.some(signal => signal.date === diary.date)
-    && (signalDue(diary.date, now) || (force && diary.date === today))).map(diary => diary.date);
+const CHAT_SIGNAL_DAYS = 7;
+const isTalk = message => !['welcome', 'diary', 'stage'].includes(message.source) && message.source !== 'safety' && !message.safety;
+
+/** 시그널에 쓸 수 있는 일기: 지우지 않았고 안전 안내로 바뀌지 않은 그날 일기. */
+function letterDiary(user, date) {
+  const diary = diaryFor(user, date);
+  return diary && !diary.deleted && diary.kind !== 'safety' && diary.status !== 'safety' ? diary : null;
 }
 
-/** What the AI gets to write a signal: the diary and that character's chat on the same day. */
-export function prepareSignal(user, date, random = Math.random) {
+/** 그 캐릭터와 그날 나눈 대화. 내가 보낸 말이 없거나 위험 신호가 있던 날은 빈 목록. */
+function dayChat(user, id, date) {
+  const chat = (user.threads[id] ?? []).filter(message => localDate(new Date(message.createdAt)) === date && isTalk(message));
+  const mine = chat.filter(message => message.role === 'user');
+  return mine.length && !mine.some(message => category(message.text) === 'safety') ? chat : [];
+}
+
+/** 위험 신호가 있던 일기 날은 시그널 대신 안전 안내만 남긴다. */
+function safetyDay(user, date) {
   const diary = diaryFor(user, date);
-  if (!diary || diary.deleted) return null;
-  const senderId = CHARACTER_IDS[Math.floor(random() * CHARACTER_IDS.length)] ?? 'first';
+  return Boolean(diary && !diary.deleted && (diary.kind === 'safety' || diary.status === 'safety'));
+}
+
+/** 시그널을 쓸 재료가 있는 날: 일기가 있거나, 일기가 없어도 그날 대화가 있는 날. */
+export function letterSource(user, date) {
+  if (safetyDay(user, date)) return null;
+  if (letterDiary(user, date)) return 'diary';
+  return CHARACTER_IDS.some(id => dayChat(user, id, date).length) ? 'chat' : null;
+}
+
+/** Dates ready for a signal: arrived after 22:00, or today when forced by the demo button.
+ *  일기가 있는 날은 일기로, 일기 없이 대화만 한 날은 대화로 쓴다 (대화만 한 날은 최근 7일까지). */
+export function signalCandidates(user, now = new Date(), force = false) {
+  const today = localDate(now);
+  const oldest = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - CHAT_SIGNAL_DAYS));
+  const dates = new Set(user.diaries.map(diary => diary.date));
+  for (const id of CHARACTER_IDS) {
+    for (const message of user.threads[id] ?? []) {
+      const date = localDate(new Date(message.createdAt));
+      if (message.role === 'user' && date >= oldest) dates.add(date);
+    }
+  }
+  return [...dates].sort().filter(date => !user.signals.some(signal => signal.date === date)
+    && (signalDue(date, now) || (force && date === today))
+    && letterSource(user, date) !== null && (letterSource(user, date) === 'diary' || date >= oldest));
+}
+
+/** What the AI gets to write a signal: the diary first, and that character's chat on the same day.
+ *  일기가 없으면 그날 대화한 캐릭터 중 한 명이 대화 내용으로 쓴다. */
+export function prepareSignal(user, date, random = Math.random) {
+  const source = letterSource(user, date);
+  if (!source) return null;
+  const diary = source === 'diary' ? letterDiary(user, date) : null;
+  const choices = diary ? CHARACTER_IDS : CHARACTER_IDS.filter(id => dayChat(user, id, date).length);
+  const senderId = choices[Math.floor(random() * choices.length)] ?? choices[0];
   const sender = user.characters.find(person => person.id === senderId);
-  const chat = (user.threads[senderId] ?? []).filter(message => localDate(new Date(message.createdAt)) === date
-    && !['welcome', 'diary', 'stage'].includes(message.source) && message.source !== 'safety');
-  return { date, senderId, sender, diary: { emoji: diary.emoji, text: diary.text }, messages: conversationContext(chat) };
+  if (!sender) return null;
+  const chat = (user.threads[senderId] ?? []).filter(message => localDate(new Date(message.createdAt)) === date && isTalk(message));
+  return {
+    date, senderId, sender, source,
+    diary: diary ? { emoji: diary.emoji, text: diary.text } : null,
+    messages: conversationContext(chat),
+  };
 }
 
 export function receiveSignal(user, { date, senderId }, message, source = 'ai', now = new Date()) {
@@ -588,8 +637,24 @@ export function signalPreview(message) {
 }
 
 /** Used when the AI server cannot write a signal, so the 22:00 letter still arrives. */
-export function preparedSignal(sender, diary) {
+export function preparedSignal(sender, diary, messages = []) {
   const address = sender.address ? `${sender.address}, ` : '';
+  if (!diary) {
+    const said = [...messages].reverse().find(message => message.role === 'user')?.content ?? '';
+    const topic = said ? `“${entryExcerpt(said, 30)}”` : '오늘 나눈 이야기';
+    const chatLines = {
+      '다정하게': sender.casual
+        ? `오늘 ${topic}${said ? '라고 들려준 거' : ''} 계속 생각났어. 이야기 나눠줘서 고마워. 오늘 밤은 푹 쉬어.`
+        : `오늘 ${topic}${said ? '라고 들려주신 거' : ''} 계속 생각났어요. 이야기 나눠줘서 고마워요. 오늘 밤은 푹 쉬어요.`,
+      '차분하게': sender.casual
+        ? `오늘 나눈 대화 중에 ${topic}${said ? '라는 말' : ''}이 마음에 남았어. 천천히 하루를 내려놓고 편안한 밤 보내.`
+        : `오늘 나눈 대화 중에 ${topic}${said ? '라는 말' : ''}이 마음에 남았어요. 천천히 하루를 내려놓고 편안한 밤 보내세요.`,
+      '재미있게': sender.casual
+        ? `오늘의 대화 하이라이트! ${topic} 이 얘기 들려줘서 즐거웠어. 굿나잇!`
+        : `오늘의 대화 하이라이트! ${topic} 이 얘기 들려줘서 즐거웠어요. 좋은 밤 되세요!`,
+    };
+    return address + chatLines[sender.style];
+  }
   const excerpt = `“${entryExcerpt(diary.text, 30)}”`;
   const lines = {
     '다정하게': sender.casual

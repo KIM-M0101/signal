@@ -173,3 +173,32 @@ test('a guest can use everything now and add a login later without losing record
   assert.equal(currentUser(back.state).diaries[0].text, '산책했어');
   assert.equal(registerAccount(registered, { loginId: 'other01', password: 'secret12' }).failed, '이미 로그인 계정이 있어요.');
 });
+
+test('a day without a diary gets a signal from that day’s chat, sent by a character the user talked to', () => {
+  const { user } = signedIn();
+  const talk = (who, text, h) => newMessage('user', text, undefined, day(h, 0, 22));
+  let chatted = { ...user, threads: { ...user.threads, second: [...user.threads.second, talk('second', '오늘 처음으로 요가 수업에 갔어.', 19)] } };
+  chatted = addReply(chatted, 'second', newMessage('assistant', '첫 수업이라니 멋져요.', 'ai', day(19, 1)), day(19, 1));
+  assert.deepEqual(signalCandidates(user, day(23)), []);
+  assert.deepEqual(signalCandidates(chatted, day(21)), []);
+  assert.deepEqual(signalCandidates(chatted, day(22)), ['2026-11-22']);
+  const prepared = prepareSignal(chatted, '2026-11-22', () => 0);
+  assert.equal(prepared.source, 'chat');
+  assert.equal(prepared.senderId, 'second');
+  assert.equal(prepared.diary, null);
+  assert.equal(prepared.messages[0].content, '오늘 처음으로 요가 수업에 갔어.');
+  assert.match(preparedSignal(prepared.sender, null, prepared.messages), /요가 수업/);
+
+  const withDiary = submitDiary(chatted, { emoji: '🙂', text: '요가 수업 다녀온 날.' }, day(20)).user;
+  assert.equal(prepareSignal(withDiary, '2026-11-22').source, 'diary');
+
+  const risky = { ...user, threads: { ...user.threads, first: [...user.threads.first, talk('first', '죽고 싶다는 생각이 들어', 19)] } };
+  assert.deepEqual(signalCandidates(risky, day(23), true), []);
+  const oldChat = { ...user, threads: { ...user.threads, first: [...user.threads.first, newMessage('user', '예전 이야기', undefined, day(19, 0, 2))] } };
+  assert.deepEqual(signalCandidates(oldChat, day(23)), []);
+});
+
+test('the 동갑 relation is no longer offered and old characters move to 친구', () => {
+  assert.equal(cleanCharacter({ ...DEFAULT_CHARACTERS[0], relation: '동갑' }, 'first').relation, '친구');
+  assert.equal(DEFAULT_CHARACTERS[0].relation, '친구');
+});

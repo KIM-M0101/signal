@@ -10,14 +10,14 @@ import { cancelAllSignalNotices, cancelSignalNotice, scheduleSignalNotice } from
 import {
   CHARACTER_IDS, DEFAULT_CHARACTERS, DEFAULT_PROFILE, MAX_PHOTO, countdown, createGuest, emptyPending, isGuest, isNight, registerAccount, STORAGE_KEY, addReply, applyDiaryResult, characterErrors,
   checkAccountInput, cleanCharacter, cleanProfile, createAccount, currentUser, deleteAccount, deleteDiary, diaryFor, editDiary,
-  emptyState, finishOnboarding, josa, guessSignal, localDate, login, logout, markSignalRead, newMessage, prepareSignal,
+  emptyState, finishOnboarding, josa, guessSignal, letterSource, localDate, login, logout, markSignalRead, newMessage, prepareSignal,
   preparedSignal, profileErrors, readState, receiveSignal, safetyReply, signalCandidates, signalDue, submitDiary, updateUser,
 } from './src/model.js';
 import {
   AccountForm, BazeConsent, CharacterSetup, Chat, Confirm, Diaries, DiaryResult, DiaryWrite, GuessResult, Home, Intro, Loading, Login,
-  Notice, Action, Privacy, ProfileForm, SenderPick, Settings, SignalArchive, SignalDetail, Tabs,
+  Notice, Action, Privacy, ProfileForm, SenderPick, Settings, SignalArchive, SignalDetail, Tabs, BackgroundContext,
 } from './src/screens.js';
-import { styles as s } from './src/theme.js';
+import { backgroundOf, styles as s } from './src/theme.js';
 
 const TAB_ROUTES = ['house', 'diaries', 'signals', 'settings'];
 
@@ -116,10 +116,10 @@ function HaruSignal() {
     const timer = setInterval(check, 10_000);
     return () => { active = false; clearInterval(timer); };
   }, [ready]);
-  // 밤 10시가 지난 일기에는 시그널을 한 통 보낸다.
+  // 밤 10시가 지나면 그날 일기(없으면 대화)로 시그널을 한 통 보낸다.
   useEffect(() => {
     if (ready && user && signalCandidates(user, now).length) void deliverSignals(false);
-  }, [ready, now, data?.sessionId, user?.diaries]);
+  }, [ready, now, data?.sessionId, user?.diaries, user?.threads]);
   // 채팅방을 보고 있으면 읽음 처리
   const room = route === 'chat' ? params.id : null;
   const roomLast = room ? user?.threads[room]?.at(-1)?.id : null;
@@ -287,7 +287,7 @@ function HaruSignal() {
   async function pickPhoto() {
     await perform(async () => {
       let result;
-      try { result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.55, exif: false }); }
+      try { result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], base64: true, quality: 0.55, exif: false }); }
       catch { throw new Error('사진 선택을 열지 못했어요. 기본 아바타를 고를 수 있어요.'); }
       if (result.canceled) return;
       const base64 = result.assets[0]?.base64;
@@ -397,6 +397,7 @@ function HaruSignal() {
         const message = newMessage('user', body);
         const saved = await saveUser(current => ({ ...current, threads: { ...current.threads, [id]: [...current.threads[id], message] } }));
         thread = currentUser(saved).threads[id];
+        void scheduleSignalNotice(localDate());
         setDrafts(current => current[id]?.trim() === body ? { ...current, [id]: '' } : current);
       }
       const result = safe ? { reply: safe, source: 'safety' } : await getReply(character, currentUser(dataRef.current).profile, thread, bazeConsent);
@@ -490,7 +491,7 @@ function HaruSignal() {
           if (!canUseAi) throw new Error('consent');
           message = await getSignal(prepared, current.profile, bazeConsent);
         } catch {
-          message = preparedSignal(prepared.sender, prepared.diary);
+          message = preparedSignal(prepared.sender, prepared.diary, prepared.messages);
           source = 'prepared';
         }
         await saveUser(state => receiveSignal(state, prepared, message, source));
@@ -589,8 +590,8 @@ function HaruSignal() {
   // ---------- 화면 ----------
 
   const signal = user?.signals.find(item => item.id === params.id);
-  const canTestSignal = Boolean(todayDiary && !todayDiary.deleted && todayDiary.kind !== 'safety'
-    && !user.signals.some(item => item.date === today));
+  const todaySource = user ? letterSource(user, today) : null;
+  const canTestSignal = Boolean(todaySource && !user.signals.some(item => item.date === today));
   const waiting = canTestSignal && !signalDue(today, now);
   const tab = TAB_ROUTES.includes(route) ? route : route === 'chat' ? 'house'
     : ['signalDetail', 'senderPick', 'guessResult'].includes(route) ? 'signals' : route.startsWith('diary') ? 'diaries' : null;
@@ -648,22 +649,24 @@ function HaruSignal() {
     onOpenEnvelope={() => void saveUser(current => markSignalRead(current, signal.id)).catch(() => {})}
     onGuess={() => go('senderPick', { id: signal.id })} onResult={() => go('guessResult', { id: signal.id })} onBack={() => go('signals')} />;
   else if (route === 'senderPick' && signal) body = signal.guessId
-    ? <GuessResult signal={signal} characters={user.characters} onArchive={() => go('signals')} onChat={() => go('house')} />
+    ? <GuessResult signal={signal} characters={user.characters} affinity={user.affinity} onArchive={() => go('signals')} onChat={() => go('house')} />
     : <SenderPick signal={signal} characters={user.characters} onSubmit={submitGuess} onBack={() => go('signalDetail', { id: signal.id })} busy={busy} error={error} />;
-  else if (route === 'guessResult' && signal?.guessId) body = <GuessResult signal={signal} characters={user.characters}
+  else if (route === 'guessResult' && signal?.guessId) body = <GuessResult signal={signal} characters={user.characters} affinity={user.affinity}
     onArchive={() => go('signals')} onChat={() => go('house')} />;
   else if (route === 'settings') body = <>
     {params.notice ? <View style={s.content}><Notice>{params.notice}</Notice></View> : null}
     <Settings profile={user.profile} characters={user.characters} affinity={user.affinity} guest={guest}
+    background={user.background} onBackground={id => void saveUser(current => ({ ...current, background: id })).catch(() => setError('배경색을 저장하지 못했어요.'))}
     onRegister={() => go('account', { register: true })}
     onEditProfile={() => editProfile('edit')} onEditCharacter={editCharacter} onRemove={askRemove} onLogout={signOut} onPrivacy={() => go('privacy')} /></>;
   else if (route !== 'chat' || !person) body = <View style={s.recovery}><Notice danger>화면을 불러오지 못했어요. 다시 시도해 주세요.</Notice>
     <Action onPress={() => go('house')}>채팅방으로</Action></View>;
   const darkStatus = ['signals', 'signalDetail', 'senderPick', 'guessResult'].includes(route) || (route === 'house' && night);
 
-  return <SafeAreaView style={s.root}>
+  const background = backgroundOf(user?.background);
+  return <BackgroundContext.Provider value={background}><SafeAreaView style={s.root}>
     <StatusBar style={darkStatus ? 'light' : 'dark'} />
-    <View style={s.frame}>
+    <View style={[s.frame, { backgroundColor: background.page }]}>
       <KeyboardAvoidingView style={s.main} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {person ? <Chat key={person.id} person={person} affinity={user.affinity[person.id] ?? 0} messages={user.threads[person.id] ?? []}
           value={drafts[person.id] ?? ''} onChange={value => setDrafts(current => ({ ...current, [person.id]: value }))}
@@ -679,7 +682,7 @@ function HaruSignal() {
     <Confirm dialog={dialog} onCancel={() => { if (!busy) { setDialog(null); setError(''); } }} onConfirm={confirmRemove} busy={busy} error={dialog ? error : ''} />
     <BazeConsent visible={bazeNotice} onCancel={() => setBazeNotice(false)}
       onAccept={() => { setBazeConsent(true); setBazeNotice(false); }} />
-  </SafeAreaView>;
+  </SafeAreaView></BackgroundContext.Provider>;
 }
 
 export default function App() {

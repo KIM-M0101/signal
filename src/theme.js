@@ -7,6 +7,16 @@ export const colors = {
   border: '#ECE6F3', paper: '#FFFFFF', tint: '#FFFCF8', cream: '#FBF6EF', danger: '#B03A5B', heart: '#D9457A',
   night: '#1D1938', nightCard: '#2A2550', nightLine: '#3D3670', nightText: '#F4F0FF', nightMuted: '#BDB4DA', star: '#FFD98A',
 };
+// 낮 화면 배경색. 설정 → 화면에서 고른다. hero는 홈 위쪽 인사말 영역, swatch는 색 버튼.
+export const BACKGROUNDS = Object.freeze([
+  { id: 'lavender', label: '연보라', page: '#F6F2FD', hero: '#ECE4FA', swatch: '#C8B5F0' },
+  { id: 'cream', label: '크림', page: '#FFFCF8', hero: '#FBF6EF', swatch: '#EEDCC0' },
+  { id: 'pink', label: '연분홍', page: '#FFF6F8', hero: '#FCE6ED', swatch: '#F4BFD0' },
+  { id: 'sky', label: '하늘', page: '#F2F7FE', hero: '#DFEBFA', swatch: '#AFCDF1' },
+  { id: 'mint', label: '민트', page: '#F2FAF6', hero: '#E0F2E9', swatch: '#ADDCC5' },
+]);
+export const backgroundOf = id => BACKGROUNDS.find(item => item.id === id) ?? BACKGROUNDS[0];
+
 const C = colors;
 const border = { borderWidth: 1, borderColor: C.border };
 const row = { flexDirection: 'row', alignItems: 'center' };
@@ -17,12 +27,12 @@ const shadow = Platform.select({
 
 const base = {
   root: { flex: 1, alignItems: 'center', backgroundColor: '#EFE9F5' },
-  frame: { flex: 1, width: '100%', maxWidth: 470, backgroundColor: C.tint },
-  main: { flex: 1, minWidth: 0, minHeight: 0, backgroundColor: C.tint },
+  frame: { flex: 1, width: '100%', maxWidth: 470, backgroundColor: BACKGROUNDS[0].page },
+  main: { flex: 1, minWidth: 0, minHeight: 0, backgroundColor: 'transparent' },
   scrollBody: { flexGrow: 1 },
   flex: { flex: 1, minWidth: 0 },
-  page: { flexGrow: 1, backgroundColor: C.tint },
-  nightPage: { flexGrow: 1, backgroundColor: C.night },
+  page: { flexGrow: 1, backgroundColor: 'transparent' },
+  nightPage: { flexGrow: 1, backgroundColor: C.night, overflow: 'hidden' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
   recovery: { gap: 10, padding: 20, paddingTop: 32 },
   content: { padding: 18, gap: 14 },
@@ -61,8 +71,8 @@ const base = {
   brandMark: { width: 24, height: 24, textAlign: 'center', lineHeight: 24, fontSize: 15, fontWeight: '700',
     color: C.accent, backgroundColor: C.lilac, borderRadius: 8, borderBottomLeftRadius: 3, overflow: 'hidden' },
   brandWord: { color: C.accent, fontSize: 11.5, fontWeight: '700', letterSpacing: 1.6 },
-  header: { ...row, minHeight: 60, paddingLeft: 8, paddingRight: 12, gap: 4, backgroundColor: C.tint },
-  headerNight: { backgroundColor: C.night },
+  header: { ...row, minHeight: 60, paddingLeft: 8, paddingRight: 12, gap: 4, backgroundColor: 'transparent' },
+  headerNight: { backgroundColor: 'transparent' },
   headerTitle: { flex: 1, color: C.ink, fontSize: 19, fontWeight: '700', letterSpacing: -0.4 },
   tag: { color: C.accent, fontSize: 12, fontWeight: '700', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 99, backgroundColor: C.lilac, overflow: 'hidden' },
   iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
@@ -104,7 +114,7 @@ const base = {
   more: { ...row, justifyContent: 'center', minHeight: 44, gap: 6 },
 
   // 첫 화면
-  intro: { flexGrow: 1, justifyContent: 'center', gap: 14, paddingHorizontal: 24, paddingTop: 24, paddingBottom: 32, backgroundColor: C.tint },
+  intro: { flexGrow: 1, justifyContent: 'center', gap: 14, paddingHorizontal: 24, paddingTop: 24, paddingBottom: 32, backgroundColor: 'transparent' },
   introArt: { borderRadius: 28, backgroundColor: '#F2EAFC', marginBottom: 6 },
   introTitle: { color: C.ink, fontSize: 40, lineHeight: 50, fontWeight: '700', letterSpacing: -1.6 },
 
@@ -141,7 +151,7 @@ const base = {
   heart: { fontSize: 13, fontWeight: '700', lineHeight: 18 },
 
   // 채팅
-  chat: { flex: 1, minHeight: 0, backgroundColor: C.tint },
+  chat: { flex: 1, minHeight: 0, backgroundColor: 'transparent' },
   chatHeader: { ...row, gap: 4, minHeight: 64, paddingLeft: 4, paddingRight: 6, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.paper },
   chatProfile: { ...row, flex: 1, minHeight: 44, minWidth: 0, gap: 10, borderRadius: 12 },
   connection: { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: C.lilac },
@@ -193,8 +203,20 @@ const base = {
 
   // 시그널(밤)
   nightCardBox: { gap: 10, padding: 16, borderRadius: 20, backgroundColor: C.nightCard, borderWidth: 1, borderColor: C.nightLine },
-  signalRow: { ...row, minHeight: 76, gap: 12, padding: 14, borderRadius: 20, backgroundColor: C.nightCard, borderWidth: 1, borderColor: C.nightLine },
-  signalNew: { borderColor: C.star },
+  signalRow: { ...row, minHeight: 76, gap: 12, padding: 14, borderRadius: 20, backgroundColor: 'rgba(42, 37, 80, 0.72)', borderWidth: 1, borderColor: 'rgba(120, 108, 190, 0.45)' },
+  signalNew: { borderColor: C.star, ...Platform.select({ web: { boxShadow: '0 0 18px rgba(255, 217, 138, 0.32)' },
+    default: { shadowColor: C.star, shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 0 }, elevation: 3 } }) },
+  sky: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  star: { position: 'absolute', backgroundColor: '#FFF6DA', borderRadius: 99 },
+  moon: { position: 'absolute', top: 14, right: 22 },
+  shooting: { position: 'absolute', top: 70, left: 0, width: 90, height: 2, borderRadius: 1 },
+  burst: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  burstHeart: { position: 'absolute', fontSize: 26, lineHeight: 30 },
+  plusHeart: { alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 99, overflow: 'hidden', fontSize: 14, fontWeight: '700', color: C.paper },
+  swatches: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  swatch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  swatchOn: { borderColor: C.accent },
+  swatchDot: { width: 32, height: 32, borderRadius: 16 },
   newTag: { color: C.night, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99, backgroundColor: C.star, overflow: 'hidden' },
   envelope: { alignItems: 'center', justifyContent: 'center', gap: 14, paddingVertical: 34, borderRadius: 24, backgroundColor: C.nightCard, borderWidth: 1, borderColor: C.nightLine },
   envelopeArt: { width: 150, height: 104 },

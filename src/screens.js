@@ -1,12 +1,102 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, LinearGradient, Path, Rect, Stop, SvgXml } from 'react-native-svg';
 import { ART } from './art.js';
 import {
   AVATARS, CHARACTER_COLORS, CHARACTER_GENDERS, MAX_DIARY, MAX_ENTRY, MAX_NOTE, MOODS, RELATIONS, STYLES, USER_GENDERS,
   countdown, dateLabel, greetingFor, josa, localDate, relationLabel, sampleLines, signalPreview, stageOf, statusLine, unreadCount,
 } from './model.js';
-import { colors as C, styles as s } from './theme.js';
+import { BACKGROUNDS, backgroundOf, colors as C, styles as s } from './theme.js';
+
+/** 사용자가 고른 낮 화면 배경색 (설정 → 화면). */
+export const BackgroundContext = createContext(BACKGROUNDS[0]);
+const useBackground = () => useContext(BackgroundContext);
+
+/** 휴대폰의 '동작 줄이기'가 켜져 있으면 반짝임·하트 효과를 멈춘다. */
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled?.().then(value => { if (active) setReduced(Boolean(value)); }).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener?.('reduceMotionChanged', value => setReduced(Boolean(value)));
+    return () => { active = false; sub?.remove?.(); };
+  }, []);
+  return reduced;
+}
+
+// 별 위치는 매번 같게(시드 고정) 흩뿌린다.
+const STARS = Array.from({ length: 46 }, (_, i) => {
+  const r = n => { const x = Math.sin((i + 1) * 9301 + n * 49297) * 233280; return x - Math.floor(x); };
+  return { left: `${(r(1) * 96 + 2).toFixed(1)}%`, top: `${(r(2) * 96 + 1).toFixed(1)}%`, size: r(3) < 0.18 ? 3 : r(3) < 0.55 ? 2 : 1.4, group: i % 3 };
+});
+
+/** 시그널 화면의 밤하늘: 반짝이는 별, 초승달, 가끔 지나가는 별똥별. */
+export function StarrySky({ dense = true }) {
+  const reduced = useReducedMotion();
+  const twinkle = [useRef(new Animated.Value(1)).current, useRef(new Animated.Value(0.55)).current, useRef(new Animated.Value(0.8)).current];
+  const shoot = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (reduced) return undefined;
+    const loops = twinkle.map((value, i) => Animated.loop(Animated.sequence([
+      Animated.timing(value, { toValue: 0.25, duration: 1400 + i * 500, easing: Easing.inOut(Easing.quad), useNativeDriver: native }),
+      Animated.timing(value, { toValue: 1, duration: 1400 + i * 500, easing: Easing.inOut(Easing.quad), useNativeDriver: native }),
+    ])));
+    const meteor = Animated.loop(Animated.sequence([
+      Animated.delay(3800),
+      Animated.timing(shoot, { toValue: 1, duration: 900, easing: Easing.out(Easing.quad), useNativeDriver: native }),
+      Animated.timing(shoot, { toValue: 0, duration: 0, useNativeDriver: native }),
+      Animated.delay(2600),
+    ]));
+    loops.forEach(loop => loop.start());
+    meteor.start();
+    return () => { loops.forEach(loop => loop.stop()); meteor.stop(); };
+  }, [reduced]);
+  const stars = dense ? STARS : STARS.filter((_, i) => i % 2 === 0);
+  return <View pointerEvents="none" style={s.sky} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    {stars.map((star, i) => <Animated.View key={i} style={[s.star, {
+      left: star.left, top: star.top, width: star.size, height: star.size, opacity: reduced ? 0.8 : twinkle[star.group],
+    }]} />)}
+    <View style={s.moon}><Svg width={44} height={44} viewBox="0 0 44 44">
+      <Circle cx="22" cy="22" r="17" fill="#FFE7A8" opacity={0.95} />
+      <Circle cx="30" cy="16" r="15" fill={C.night} />
+    </Svg></View>
+    {!reduced ? <Animated.View style={[s.shooting, {
+      opacity: shoot.interpolate({ inputRange: [0, 0.1, 0.8, 1], outputRange: [0, 1, 0.8, 0] }),
+      transform: [{ translateX: shoot.interpolate({ inputRange: [0, 1], outputRange: [40, 320] }) },
+        { translateY: shoot.interpolate({ inputRange: [0, 1], outputRange: [0, 110] }) }, { rotate: '19deg' }],
+    }]}><Svg width={90} height={2}><Defs><LinearGradient id="meteor" x1="0" y1="0" x2="1" y2="0">
+      <Stop offset="0" stopColor="#FFF6DA" stopOpacity="0" /><Stop offset="1" stopColor="#FFF6DA" stopOpacity="1" />
+    </LinearGradient></Defs><Rect width={90} height={2} rx={1} fill="url(#meteor)" /></Svg></Animated.View> : null}
+  </View>;
+}
+
+/** 보낸 사람을 맞혔을 때 하트가 터지듯 떠오르는 효과. */
+function HeartBurst({ color }) {
+  const reduced = useReducedMotion();
+  const hearts = useRef(Array.from({ length: 14 }, (_, i) => ({
+    value: new Animated.Value(0),
+    x: Math.round(Math.cos((i / 14) * Math.PI * 2) * (70 + (i % 3) * 26)),
+    y: Math.round(Math.sin((i / 14) * Math.PI * 2) * (50 + (i % 4) * 18)) - 60,
+    size: 18 + (i % 4) * 5,
+    tint: i % 3 === 0 ? C.star : i % 2 ? C.heart : color,
+  }))).current;
+  useEffect(() => {
+    if (reduced) return;
+    Animated.stagger(45, hearts.map(heart => Animated.timing(heart.value, {
+      toValue: 1, duration: 1300, easing: Easing.out(Easing.cubic), useNativeDriver: native,
+    }))).start();
+  }, [reduced]);
+  if (reduced) return null;
+  return <View pointerEvents="none" style={s.burst} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    {hearts.map((heart, i) => <Animated.Text key={i} style={[s.burstHeart, { color: heart.tint, fontSize: heart.size,
+      opacity: heart.value.interpolate({ inputRange: [0, 0.15, 0.7, 1], outputRange: [0, 1, 1, 0] }),
+      transform: [
+        { translateX: heart.value.interpolate({ inputRange: [0, 1], outputRange: [0, heart.x] }) },
+        { translateY: heart.value.interpolate({ inputRange: [0, 1], outputRange: [10, heart.y] }) },
+        { scale: heart.value.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0.3, 1.25, 0.9] }) },
+      ] }]}>♥</Animated.Text>)}
+  </View>;
+}
 
 const icons = {
   chat: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-3.5-.7L3 21l1.7-5.7a9 9 0 0 1-.7-3.8 8.5 8.5 0 0 1 17 0Z',
@@ -49,10 +139,29 @@ export function Action({ children, onPress, icon, kind = 'primary', disabled = f
 }
 
 export function Avatar({ person, size = 48, ring }) {
-  const dimensions = { width: size, height: size, borderRadius: size / 2 };
-  return <View style={[s.avatar, dimensions, ring && { borderWidth: 2, borderColor: ring }]} accessibilityElementsHidden>
-    {person.photo ? <Image source={{ uri: person.photo }} style={dimensions} /> : <SvgXml xml={ART[person.avatar]} width={size} height={size} />}
+  // 테두리 두께만큼 안쪽 원을 줄여서, 사진이 원 안을 가운데 기준으로 꽉 채우게 한다.
+  const line = ring ? 2 : 0;
+  const inner = size - line * 2;
+  const circle = { width: inner, height: inner, borderRadius: inner / 2 };
+  return <View style={[s.avatar, { width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center' },
+    ring && { borderWidth: line, borderColor: ring }]} accessibilityElementsHidden>
+    <View style={[circle, { overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }]}>
+      {person.photo ? <Image source={{ uri: person.photo }} resizeMode="cover" style={circle} />
+        : <SvgXml xml={ART[person.avatar]} width={inner} height={inner} />}
+    </View>
   </View>;
+}
+
+/** 입력창이 자기 글자를 먼저 들고 있다가 위로 알린다.
+ *  저장이 늦게 끝나도 한글 조합 중인 글자가 덮어써지지 않게 한다(한 글자씩 끊기던 문제). */
+function TextBox({ value, onChangeText, inputRef, onFocus, onBlur, ...props }) {
+  const [text, setText] = useState(value ?? '');
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setText(value ?? ''); }, [value]);
+  return <TextInput ref={inputRef} {...props} value={text}
+    onChangeText={next => { setText(next); onChangeText?.(next); }}
+    onFocus={event => { focused.current = true; onFocus?.(event); }}
+    onBlur={event => { focused.current = false; onBlur?.(event); }} />;
 }
 
 /** 호감도: 단계 이름 + 진행 바 + 퍼센트. 내려가지 않는 관계의 깊이로 보여준다. */
@@ -150,7 +259,7 @@ function Field({ label, value, onChangeText, limit, placeholder, multiline, requ
       <Text style={required ? s.required : s.optional}>{required ? '필수' : '선택'}</Text>
     </View>
     <View style={s.row}>
-      <TextInput ref={inputRef} accessibilityLabel={label} value={value} onChangeText={onChangeText} maxLength={limit} placeholder={placeholder}
+      <TextBox inputRef={inputRef} accessibilityLabel={label} value={value} onChangeText={onChangeText} maxLength={limit} placeholder={placeholder}
         placeholderTextColor="#A39BB2" multiline={multiline} secureTextEntry={secure} autoCapitalize="none"
         style={[s.input, s.flex, multiline && s.textarea, error && s.inputError]} />
       {right}
@@ -230,7 +339,7 @@ export function ProfileForm({ value, onChange, onNext, onBack, errors = {}, busy
       <Field label="MBTI" value={value.mbti} onChangeText={mbti => onChange({ mbti })} limit={12} placeholder="자유롭게 적어 주세요" />
       <ChoiceGroup label="성별">
         <Chips options={USER_GENDERS} value={value.gender} onChange={gender => onChange({ gender })} disabled={busy} />
-        {value.gender === '직접 입력' ? <TextInput accessibilityLabel="성별 직접 입력" value={value.genderCustom} maxLength={16}
+        {value.gender === '직접 입력' ? <TextBox accessibilityLabel="성별 직접 입력" value={value.genderCustom} maxLength={16}
           onChangeText={genderCustom => onChange({ genderCustom })} style={s.input} placeholder="직접 입력" placeholderTextColor="#A39BB2" /> : null}
       </ChoiceGroup>
       {error ? <Notice danger>{error}</Notice> : null}
@@ -284,7 +393,7 @@ export function CharacterSetup({
       </View>
       <ChoiceGroup label="관계" required>
         <Chips options={RELATIONS} value={person.relation} onChange={relation => onChange({ relation })} disabled={busy} />
-        {person.relation === '기타' ? <TextInput accessibilityLabel="관계 직접 입력" value={person.relationCustom} maxLength={16}
+        {person.relation === '기타' ? <TextBox accessibilityLabel="관계 직접 입력" value={person.relationCustom} maxLength={16}
           onChangeText={relationCustom => onChange({ relationCustom })} style={s.input} placeholder="직접 입력" placeholderTextColor="#A39BB2" /> : null}
       </ChoiceGroup>
       <ChoiceGroup label="대화 방식" required>
@@ -309,7 +418,7 @@ export function CharacterSetup({
       {moreOpen ? <>
         <ChoiceGroup label="성별">
           <Chips options={CHARACTER_GENDERS} value={person.gender} onChange={gender => onChange({ gender })} disabled={busy} />
-          {person.gender === '직접 입력' ? <TextInput accessibilityLabel="캐릭터 성별 직접 입력" value={person.genderCustom} maxLength={16}
+          {person.gender === '직접 입력' ? <TextBox accessibilityLabel="캐릭터 성별 직접 입력" value={person.genderCustom} maxLength={16}
             onChangeText={genderCustom => onChange({ genderCustom })} style={s.input} placeholder="직접 입력" placeholderTextColor="#A39BB2" /> : null}
         </ChoiceGroup>
         <Field label="MBTI" value={person.mbti} onChangeText={mbti => onChange({ mbti })} limit={12} placeholder="자유롭게 적어 주세요" />
@@ -363,8 +472,9 @@ export function Home({
   profile, characters, affinity, threads, readThrough, todayDiary, todaySignal, now, night, onOpenRoom, onDiary, onSignals, onOpenSignal, onSettings,
 }) {
   const today = localDate(now);
+  const background = useBackground();
   return <View style={s.page}>
-    <View style={[s.hero, night && s.heroNight]}>
+    <View style={[s.hero, { backgroundColor: background.hero }, night && s.heroNight]}>
       <View style={s.rowBetween}><Brand night={night} />
         <Pressable accessibilityRole="button" accessibilityLabel="프로필·캐릭터 설정" onPress={onSettings} style={s.iconButton}>
           <Icon name="gear" color={night ? C.nightText : C.ink} /></Pressable>
@@ -438,7 +548,7 @@ function TodayCard({ today, diary, signal, now, night, onDiary, onSignals, onOpe
     body = <>
       <View style={s.row}><Text style={s.todayEmoji}>📔</Text>
         <View style={s.flex}><Text style={[s.title, ink]}>오늘 하루는 어땠나요?</Text>
-          <Text style={[s.note, muted]}>일기를 남기면 밤 10시에 두 캐릭터 중 한 명이 시그널을 보내요.</Text></View></View>
+          <Text style={[s.note, muted]}>일기나 대화를 남기면 밤 10시에 두 캐릭터 중 한 명이 시그널을 보내요.</Text></View></View>
       <Action icon="pen" onPress={onDiary}>오늘의 일기 쓰기</Action>
     </>;
   }
@@ -670,7 +780,7 @@ export function Diaries({ diaries, today, onOpen, onWrite }) {
     <View style={s.content}>
       <View style={s.card}>
         <Text style={s.sectionDate}>{dateLabel(today)}</Text>
-        <Text style={s.body}>{todayDiary ? (todayDiary.deleted ? '오늘 일기는 삭제했어요. 내일 다시 남길 수 있어요.' : '오늘 일기를 남겼어요. 오늘 안에는 수정할 수 있어요.') : '오늘의 일기를 남기면 밤 10시에 시그널이 도착해요.'}</Text>
+        <Text style={s.body}>{todayDiary ? (todayDiary.deleted ? '오늘 일기는 삭제했어요. 내일 다시 남길 수 있어요.' : '오늘 일기를 남겼어요. 오늘 안에는 수정할 수 있어요.') : '오늘의 일기를 남기면 밤 10시에 일기를 읽은 캐릭터가 시그널을 보내요. 일기를 쓰지 않은 날은 그날 대화로 써요.'}</Text>
         {!todayDiary ? <Action icon="pen" onPress={onWrite}>오늘의 일기 쓰기</Action>
           : !todayDiary.deleted ? <Action kind="soft" onPress={() => onOpen(today)}>오늘 남긴 일기 보기</Action> : null}
       </View>
@@ -689,19 +799,20 @@ export function Diaries({ diaries, today, onOpen, onWrite }) {
 // 8. 시그널 보관함 (밤 테마)
 export function SignalArchive({ signals, characters, onOpen, onChat, canTest, onTest, testing, error, waitingFor }) {
   return <View style={s.nightPage}>
+    <StarrySky />
     <Header title="시그널 보관함" night />
     <View style={s.content}>
       {waitingFor ? <View style={s.nightCardBox}>
         <Text style={s.nightTime}>오늘 밤 10:00 도착 예정</Text>
         <Text style={[s.countdown, { color: C.nightText }]}>{waitingFor} 남았어요</Text>
-        <Text style={[s.note, s.nightMuted]}>오늘 남긴 일기를 읽은 캐릭터 한 명이 하루 마무리 편지를 보내요.</Text>
+        <Text style={[s.note, s.nightMuted]}>오늘 남긴 일기를 먼저 읽고, 일기가 없으면 오늘 나눈 대화를 바탕으로 캐릭터 한 명이 하루 마무리 편지를 보내요.</Text>
       </View> : null}
       {canTest ? <Action icon="moon" kind="nightSoft" disabled={testing} onPress={onTest}>{testing ? '시그널을 쓰는 중이에요…' : '밤 10시 도착 테스트 (시연용)'}</Action> : null}
       {error ? <Notice danger>{error}</Notice> : null}
       {!signals.length ? <View style={s.empty}>
         <Svg width={120} height={84} viewBox="0 0 150 104"><Envelope /></Svg>
         <Text style={[s.title, s.nightText]}>아직 도착한 시그널이 없어요.</Text>
-        <Text style={[s.note, s.nightMuted]}>오늘의 일기를 남긴 날 밤 10시에 시그널이 도착해요.</Text>
+        <Text style={[s.note, s.nightMuted]}>일기를 쓰거나 대화를 나눈 날 밤 10시에 시그널이 도착해요.</Text>
         <Action kind="nightSoft" onPress={onChat}>채팅방으로 돌아가기</Action></View> : null}
       {signals.map(signal => {
         const sender = signal.guessId ? characters.find(person => person.id === signal.senderId) : null;
@@ -742,6 +853,7 @@ export function SignalDetail({ signal, characters, onOpenEnvelope, onGuess, onRe
     Animated.timing(reveal, { toValue: 1, duration: 650, useNativeDriver: native }).start();
   }
   return <View style={s.nightPage}>
+    <StarrySky dense={false} />
     <Header title="시그널" onBack={onBack} night />
     <View style={s.content}>
       <View style={{ alignItems: 'center', gap: 4 }}>
@@ -770,6 +882,7 @@ export function SignalDetail({ signal, characters, onOpenEnvelope, onGuess, onRe
 export function SenderPick({ signal, characters, onSubmit, onBack, busy, error }) {
   const [choice, setChoice] = useState(null);
   return <View style={s.nightPage}>
+    <StarrySky dense={false} />
     <Header title="발신자 추측" onBack={onBack} night />
     <View style={s.content}>
       <Text accessibilityRole="header" style={s.bigQuestion}>누가 보냈을까요?</Text>
@@ -796,24 +909,33 @@ export function SenderPick({ signal, characters, onSubmit, onBack, busy, error }
 }
 
 // 11. 추측 결과
-export function GuessResult({ signal, characters, onArchive, onChat }) {
+export function GuessResult({ signal, characters, affinity = {}, onArchive, onChat }) {
   const sender = characters.find(person => person.id === signal.senderId);
   const picked = characters.find(person => person.id === signal.guessId);
   const correct = signal.guessId === signal.senderId;
+  // 방금 맞힌 결과일 때만 하트를 터뜨린다(나중에 다시 열면 조용히).
+  const fresh = correct && signal.guessedAt && Date.now() - new Date(signal.guessedAt).getTime() < 15_000;
   const pop = useRef(new Animated.Value(0.6)).current;
   useEffect(() => { Animated.spring(pop, { toValue: 1, friction: 5, useNativeDriver: native }).start(); }, []);
   if (!sender) return null;
+  const color = tone(sender.id);
   return <View style={s.nightPage}>
+    <StarrySky dense={false} />
     <Header title="추측 결과" night />
     <View style={s.content}>
       <Animated.View style={[s.result, { transform: [{ scale: pop }] }]}>
-        <Text style={s.resultEmoji}>{correct ? '🎉' : '💌'}</Text>
+        <Text style={s.resultEmoji}>{correct ? '💖' : '💌'}</Text>
         <Text accessibilityRole="header" style={s.bigQuestion}>{correct ? '맞혔어요!' : '이번엔 다른 캐릭터였어요.'}</Text>
-        <Avatar person={sender} size={84} ring={tone(sender.id).main} />
+        <View>
+          <Avatar person={sender} size={84} ring={color.main} />
+          {fresh ? <HeartBurst color={color.main} /> : null}
+        </View>
         <Text style={[s.title, s.nightText]}>{sender.name}</Text>
+        {correct ? <Text style={[s.plusHeart, { backgroundColor: C.heart }]}>♥ 호감도 +3</Text> : null}
         <Text style={[s.body, s.nightMuted, { textAlign: 'center' }]}>{correct
           ? `역시 ${sender.name}의 말투를 알아봤네요. ${sender.name}의 호감도가 올랐어요.`
           : `이 편지는 ${sender.name}의 '${voice(sender)}' 말투였어요.${picked ? ` ${picked.name}의 말투는 '${voice(picked)}'예요.` : ''} 다음 시그널도 기대해 주세요.`}</Text>
+        {correct ? <View style={{ alignSelf: 'stretch' }}><HeartMeter value={affinity[sender.id] ?? 0} id={sender.id} night /></View> : null}
       </Animated.View>
       {!correct && picked ? <View style={[s.nightCardBox, s.row]}>
         <Avatar person={picked} size={40} /><Text style={[s.note, s.nightMuted, s.flex]}>내 선택 · {picked.name}</Text>
@@ -832,7 +954,27 @@ function SettingsRow({ children, onPress, danger = false, detail }) {
   </Pressable>;
 }
 
-export function Settings({ profile, characters, affinity, guest, onEditProfile, onEditCharacter, onRegister, onRemove, onLogout, onPrivacy }) {
+/** 낮 화면 배경색 고르기: 색 버튼 5개 + 저장. */
+function BackgroundPicker({ value, onSave }) {
+  const [picked, setPicked] = useState(value);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => { setPicked(value); }, [value]);
+  const changed = picked !== value;
+  return <View style={s.cardSection}>
+    <Text style={s.label}>배경색</Text>
+    <View style={s.swatches} accessibilityRole="radiogroup">
+      {BACKGROUNDS.map(item => <Pressable key={item.id} accessibilityRole="radio" accessibilityLabel={item.label}
+        accessibilityState={{ checked: picked === item.id }} onPress={() => { setPicked(item.id); setSaved(false); }}
+        style={[s.swatch, picked === item.id && s.swatchOn]}>
+        <View style={[s.swatchDot, { backgroundColor: item.swatch }]} />
+      </Pressable>)}
+    </View>
+    <Text style={s.note}>{backgroundOf(picked).label} · 채팅방, 일기, 설정 같은 낮 화면에 적용돼요. 시그널 화면은 밤하늘 그대로예요.</Text>
+    <Action disabled={!changed} onPress={() => { onSave(picked); setSaved(true); }}>{saved && !changed ? '저장했어요' : '저장'}</Action>
+  </View>;
+}
+
+export function Settings({ profile, characters, affinity, guest, background, onBackground, onEditProfile, onEditCharacter, onRegister, onRemove, onLogout, onPrivacy }) {
   return <View style={s.page}>
     <Header title="설정" />
     <View style={s.content}>
@@ -849,6 +991,8 @@ export function Settings({ profile, characters, affinity, guest, onEditProfile, 
         </View>
         <HeartMeter value={affinity[person.id] ?? 0} id={person.id} />
       </View>)}
+      <Text style={s.sectionDate}>화면</Text>
+      <BackgroundPicker value={background} onSave={onBackground} />
       <Text style={s.sectionDate}>개인정보와 기록</Text>
       <SettingsRow onPress={onPrivacy}>개인정보 안내</SettingsRow>
       <SettingsRow danger onPress={() => onRemove({ type: 'records' })} detail="일기, 채팅, 시그널을 지워요. 프로필은 남아요.">기록 삭제</SettingsRow>
@@ -867,7 +1011,7 @@ export function Privacy({ onBack, provider }) {
     ['AI로 보내는 정보', provider === 'baze'
       ? '베이즈 테스트 모드에서는 동의 후 내 프로필의 텍스트, 캐릭터의 텍스트 설정, 일기 또는 같은 방의 최근 대화를 베이즈로 보내요. 사진과 비밀번호는 보내지 않아요.'
       : '답장·일기 응원·시그널을 만들 때 내 프로필의 텍스트, 캐릭터의 텍스트 설정, 일기 또는 같은 방의 최근 대화를 개발 PC의 로컬 AI로 보내요. 사진과 비밀번호는 보내지 않아요.'],
-    ['알림', '앱에서 일기를 남긴 날 밤 10시에 시그널 도착 알림을 이 기기에서 한 번 보내요. 알림 내용에는 일기 내용이 들어가지 않아요. 기기 설정에서 언제든 끌 수 있어요.'],
+    ['알림', '앱에서 일기나 대화를 남긴 날 밤 10시에 시그널 도착 알림을 이 기기에서 한 번 보내요. 알림 내용에는 일기 내용이 들어가지 않아요. 기기 설정에서 언제든 끌 수 있어요.'],
     ['수정과 삭제', '설정 → 내 프로필·캐릭터 수정, 일기 화면의 ⋯ 메뉴에서 오늘 일기 수정·삭제, 설정 → 기록 삭제 / 계정·내 프로필 삭제.'],
     ['서비스의 범위', '하루시그널은 기록과 응원을 위한 서비스이며 진단, 치료, 상담을 제공하지 않아요. 위험한 상황이면 112·119, 마음이 힘들 땐 109에 연락해 주세요.'],
   ];

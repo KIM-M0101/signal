@@ -203,3 +203,44 @@ test('the Baze preview gates external calls and returns Luna token usage without
   assert.doesNotMatch(JSON.stringify(calls[0].request), /private-image|자해|fixture-key/);
 });
 
+
+test('replies with Japanese, Chinese characters or the wrong speech level are rewritten', async t => {
+  const outputs = ['今日は 정말 수고했어요.', '오늘 정말 수고했어. 푹 쉬어요.', '오늘 정말 수고했어. 푹 쉬어.'];
+  const prompts = [];
+  const base = await runServer(t, async (_url, options) => {
+    const body = JSON.parse(options.body);
+    prompts.push(body);
+    return Response.json({ choices: [{ message: { content: outputs[prompts.length - 1] } }] });
+  });
+  const response = await post(base, { character: { ...character, casual: true }, user: profile, messages: [user('오늘 발표 끝났어')] });
+  assert.deepEqual(await response.json(), { reply: '오늘 정말 수고했어. 푹 쉬어.', source: 'ai' });
+  assert.equal(prompts.length, 3);
+  assert.match(prompts[1].messages[0].content, /only Korean Hangul/);
+  assert.match(prompts[2].messages[0].content, /use only 반말/);
+  assert.equal(prompts[2].temperature, 0.3);
+});
+
+test('a reply that keeps foreign characters is cleaned, and a wrong voice is never shown', async t => {
+  const base = await runServer(t, async () => Response.json({ choices: [{ message: { content: '오늘 발표 끝내느라 정말 수고했어요(辛苦了)!' } }] }));
+  const cleaned = await post(base, { character, user: profile, messages: [user('발표 끝났어요')] });
+  assert.deepEqual(await cleaned.json(), { reply: '오늘 발표 끝내느라 정말 수고했어요!', source: 'ai' });
+
+  const wrong = await runServer(t, async () => Response.json({ choices: [{ message: { content: '오늘 진짜 수고했어. 푹 쉬어.' } }] }));
+  assert.equal((await post(wrong, { character, user: profile, messages: [user('발표 끝났어요')] })).status, 503);
+});
+
+test('a signal for a day without a diary is written from that day’s chat only', async t => {
+  let request;
+  const base = await runServer(t, async (_url, options) => {
+    request = JSON.parse(options.body);
+    return Response.json({ choices: [{ message: { content: '요가 수업 이야기를 들려줘서 고마워요. 오늘 밤은 편히 쉬어요.' } }] });
+  });
+  const signalPost = body => post(base, body, {}, '/api/signal');
+  const chatOnly = [user('오늘 요가 수업에 처음 갔어요.'), assistant('첫 수업이라니 멋져요.')];
+  const response = await signalPost({ character, user: profile, diary: null, messages: chatOnly });
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(request.messages[1].content), { todayChat: chatOnly });
+  assert.match(request.messages[0].content, /otherwise base it on today's chat/);
+  assert.equal((await signalPost({ character, user: profile, diary: null, messages: [] })).status, 400);
+  assert.equal((await signalPost({ character, user: profile, diary: { text: '감정 없음' }, messages: chatOnly })).status, 400);
+});
